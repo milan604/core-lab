@@ -58,12 +58,15 @@ func NewEngine(opts ...EngineOption) *gin.Engine {
 		prom.RegisterMetricsEndpoint(engine)
 	}
 
-	// 7. User-provided middlewares
+	// 7. Error Handler
+	engine.Use(middleware.ErrorHandlerMiddleware())
+
+	// 8. User-provided middlewares
 	for _, m := range opt.addMiddleware {
 		engine.Use(m)
 	}
 
-	// 8. Recovery (last, to catch panics)
+	// 9. Recovery (last, to catch panics)
 	if opt.recovery {
 		engine.Use(middleware.RecoveryMiddleware(logMgr))
 	}

@@ -1,0 +1,5 @@
+{
+  "greeting": "Bonjour, {{name}} !",
+  "cart.items.one": "Vous avez {{count}} article",
+  "cart.items.other": "Vous avez {{count}} articles"
+}

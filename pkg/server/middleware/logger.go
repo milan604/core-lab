@@ -3,7 +3,7 @@ package server
 import (
 	"time"
 
-	"corelab/pkg/logger"
+	"github.com/milan604/core-lab/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

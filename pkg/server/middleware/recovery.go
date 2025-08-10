@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"corelab/pkg/logger"
+	"github.com/milan604/core-lab/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )

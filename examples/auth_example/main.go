@@ -8,19 +8,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"corelab/pkg/apperr"
-	"corelab/pkg/config"
-	"corelab/pkg/i18n"
-	"corelab/pkg/logger"
-	"corelab/pkg/response"
-	"corelab/pkg/server"
-	smw "corelab/pkg/server/middleware"
-	"corelab/pkg/utils"
-	"corelab/pkg/validator"
-	"corelab/pkg/version"
+	"github.com/milan604/core-lab/pkg/apperr"
+	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/i18n"
+	"github.com/milan604/core-lab/pkg/logger"
+	"github.com/milan604/core-lab/pkg/response"
+	"github.com/milan604/core-lab/pkg/server"
+	smw "github.com/milan604/core-lab/pkg/server/middleware"
+	"github.com/milan604/core-lab/pkg/utils"
+	"github.com/milan604/core-lab/pkg/validator"
+	"github.com/milan604/core-lab/pkg/version"
 
-	authmw "corelab/pkg/auth/middleware"
-	"corelab/pkg/auth/openfga"
+	authmw "github.com/milan604/core-lab/pkg/auth/middleware"
+	"github.com/milan604/core-lab/pkg/auth/openfga"
 )
 
 func main() {

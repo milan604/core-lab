@@ -1,4 +1,4 @@
-module corelab
+module github.com/milan604/core-lab
 
 go 1.24
 

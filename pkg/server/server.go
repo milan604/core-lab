@@ -10,8 +10,8 @@ import (
 	"os/signal"
 	"time"
 
-	"corelab/pkg/logger"
-	middleware "corelab/pkg/server/middleware"
+	"github.com/milan604/core-lab/pkg/logger"
+	middleware "github.com/milan604/core-lab/pkg/server/middleware"
 
 	"github.com/gin-gonic/gin"
 )

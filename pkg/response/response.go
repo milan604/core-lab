@@ -3,7 +3,7 @@ package response
 import (
 	"net/http"
 
-	"corelab/pkg/apperr"
+	"github.com/milan604/core-lab/pkg/apperr"
 
 	"github.com/gin-gonic/gin"
 )

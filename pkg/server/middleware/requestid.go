@@ -2,7 +2,8 @@ package server
 
 import (
 	"context"
-	"corelab/pkg/logger"
+
+	"github.com/milan604/core-lab/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

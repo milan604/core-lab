@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"corelab/pkg/apperr"
+	"github.com/milan604/core-lab/pkg/apperr"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"

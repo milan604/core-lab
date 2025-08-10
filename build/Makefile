@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS := -X 'corelab/pkg/version.Version=$(VERSION)' -X 'corelab/pkg/version.Commit=$(COMMIT)' -X 'corelab/pkg/version.Date=$(DATE)'
+LDFLAGS := -X 'github.com/milan604/core-lab/pkg/version.Version=$(VERSION)' -X 'github.com/milan604/core-lab/pkg/version.Commit=$(COMMIT)' -X 'github.com/milan604/core-lab/pkg/version.Date=$(DATE)'
 
 build:
 	go build -ldflags "$(LDFLAGS)" ./...

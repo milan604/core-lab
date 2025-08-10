@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"corelab/pkg/auth/openfga"
+	"github.com/milan604/core-lab/pkg/auth/openfga"
 
 	"github.com/gin-gonic/gin"
 )

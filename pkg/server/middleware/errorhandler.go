@@ -1,7 +1,7 @@
 package server
 
 import (
-	"corelab/pkg/response"
+	"github.com/milan604/core-lab/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

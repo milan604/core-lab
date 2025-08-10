@@ -1,11 +1,12 @@
 package server
 
 import (
-	"corelab/pkg/config"
-	"corelab/pkg/logger"
 	"time"
 
-	middleware "corelab/pkg/server/middleware"
+	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/logger"
+
+	middleware "github.com/milan604/core-lab/pkg/server/middleware"
 
 	"github.com/gin-gonic/gin"
 )

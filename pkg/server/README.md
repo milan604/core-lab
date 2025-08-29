@@ -99,6 +99,16 @@ func main() {
     }
 }
 ```
+# server
+
+Gin server setup with advanced middleware (CORS, logging, Prometheus, rate limiting).
+
+## Usage
+```go
+import "github.com/milan604/core-lab/pkg/server"
+engine := server.NewEngine()
+server.Start(engine)
+```
 
 ## Implementation Guide
 

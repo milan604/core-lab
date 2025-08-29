@@ -3,16 +3,6 @@
 This package provides structured, context-aware logging for Go applications, built on top of [zap](https://github.com/uber-go/zap). It is designed for flexibility, performance, and easy integration with modern cloud-native services.
 
 ## Features
-- Structured logging with zap (high performance)
-- Dynamic log level (change at runtime)
-- Console and JSON encoding
-- Custom output and error paths
-- Context-aware logging (request/user IDs)
-- Formatted logging (printf-style)
-- Stacktrace and caller info (optional)
-- Safe sync and error handling
-- Extendable with custom fields
-- Uses Go 1.18+ `any` type for variadic arguments
 
 ## Usage Example
 ```go
@@ -27,11 +17,18 @@ log.InfoFCtx(ctx, "User login: %s", userID)
 
 log.SetLogLevel("debug") // Change log level at runtime
 ```
+# logger
+
+Structured logging using zap with context support.
+
+## Usage
+```go
+import "github.com/milan604/core-lab/pkg/logger"
+log := logger.MustNewDefaultLogger()
+log.Info("Hello world")
+```
 
 ## API Reference
-
-### Types
-- `LogManager` (interface): Main logger interface
 - `LoggerOptions`: Options for custom logger configuration
 - `ContextKey`: Type for context keys (request/user IDs)
 

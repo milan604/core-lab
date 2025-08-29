@@ -2,10 +2,6 @@
 
 Practical auth utilities for Gin services:
 
-- JWT auth middleware with JWKS (RS256) verification
-- Scope and role enforcement helpers
-- Keycloak claim helpers (realm and client roles)
-- OpenFGA authorizer interface with in-memory implementation
 
 ## JWT auth quick start
 
@@ -32,9 +28,6 @@ r.GET("/me", middleware.RequireScopes("read:profile"), func(c *gin.Context) {
 
 ## Roles and scopes
 
-- `RequireScopes(scopes...)` checks `scope` (space-separated) or `scp` (array) claims.
-- `RequireAnyScope(scopes...)` allows any match.
-- `RequireRoles(roles...)` checks `roles` (array) at top-level claim.
 
 For Keycloak roles, use the helpers from `auth/keycloak`:
 
@@ -65,5 +58,4 @@ r.GET("/docs/:id", middleware.RequireAuthZ(authz, func(c *gin.Context) (user, re
 }), handler)
 ```
 
----
 Private and proprietary. All rights reserved.

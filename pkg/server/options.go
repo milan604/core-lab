@@ -5,6 +5,7 @@ import (
 
 	"github.com/milan604/core-lab/pkg/config"
 	"github.com/milan604/core-lab/pkg/logger"
+	"github.com/milan604/core-lab/pkg/validator"
 
 	middleware "github.com/milan604/core-lab/pkg/server/middleware"
 
@@ -90,6 +91,12 @@ func WithCors(c middleware.CorsConfig) EngineOption {
 
 func WithPrometheus(enabled bool) EngineOption {
 	return func(e *engineOptions) { e.prometheus = enabled }
+}
+
+func WithValidator(vi *validator.Validator) EngineOption {
+	return func(e *engineOptions) {
+		e.addMiddleware = append(e.addMiddleware, middleware.ValidatorMiddleware(vi))
+	}
 }
 
 func WithMiddleware(m ...gin.HandlerFunc) EngineOption {

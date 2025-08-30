@@ -3,9 +3,8 @@ package server
 import (
 	"time"
 
-	"github.com/milan604/core-lab/pkg/logger"
-
 	"github.com/gin-gonic/gin"
+	"github.com/milan604/core-lab/pkg/logger"
 )
 
 const loggerKey = "corelab_logger"
@@ -21,17 +20,7 @@ func AppLoggerMiddleware(l logger.LogManager) gin.HandlerFunc {
 	}
 }
 
-// GetLogger retrieves the request-scoped logger from context (fallback to a global)
-func GetLogger(c *gin.Context) logger.LogManager {
-	if val, ok := c.Get(loggerKey); ok {
-		if lm, yes := val.(logger.LogManager); yes {
-			return lm
-		}
-	}
-	// fallback: create default logger
-	def := logger.MustNewDefaultLogger()
-	return def
-}
+// ...existing code...
 
 // AccessLoggerMiddleware logs each request after completion
 func AccessLoggerMiddleware(l logger.LogManager) gin.HandlerFunc {

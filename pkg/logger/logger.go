@@ -6,9 +6,25 @@ import (
 	"os"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+const ginLoggerKey = "corelab_logger"
+
+// GetLogger retrieves the request-scoped logger from gin.Context (fallback to a global)
+// Usage: logger.GetLogger(c)
+func GetLogger(c *gin.Context) LogManager {
+	if val, ok := c.Get(ginLoggerKey); ok {
+		if lm, yes := val.(LogManager); yes {
+			return lm
+		}
+	}
+	// fallback: create default logger
+	def := MustNewDefaultLogger()
+	return def
+}
 
 type ContextKey string
 

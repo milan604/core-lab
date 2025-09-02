@@ -125,3 +125,22 @@ func (a *AppError) Wrap(err error) *AppError {
 
 // Unwrap returns the underlying cause, allowing errors.Unwrap/Is/As to work.
 func (a *AppError) Unwrap() error { return a.cause }
+
+// HasError returns true if the error is not nil and is not an empty AppError
+func HasError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if ae, ok := err.(*AppError); ok {
+		return ae.Code != "" || ae.Message != ""
+	}
+	return true
+}
+
+// HasErrors returns true if the AppError has a code, message, or suggestions
+func (a *AppError) HasErrors() bool {
+	if a == nil {
+		return false
+	}
+	return a.Code != "" || a.Message != "" || len(a.Suggestions) > 0
+}

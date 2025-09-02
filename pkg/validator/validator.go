@@ -36,6 +36,15 @@ type Validator struct {
 	fieldNameFn      func(reflect.StructField) string
 }
 
+// ValidatorEngine defines the interface for validation engines
+// This allows for custom implementations and easier testing
+// Example methods: RegisterValidation, RegisterTagError, ParseError, etc.
+type ValidatorEngine interface {
+	RegisterValidation(tag string, fn gvalidator.Func) error
+	RegisterTagError(tag string, code *apperr.ErrorCode, builder func(gvalidator.FieldError) string)
+	ParseError(err error) *apperr.AppError
+}
+
 // New creates a new Validator instance and wires up Gin's validator engine for tag->name resolution.
 func New() *Validator {
 	v := gvalidator.New()
@@ -164,7 +173,7 @@ func (vi *Validator) buildMessageForField(fe gvalidator.FieldError) string {
 --------------------------------*/
 
 // BindJSON binds and validates JSON body into T. Returns either (*T, nil) or (nil, *apperr.AppError)
-func BindJSON[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
+func BindJSON[T any](vi ValidatorEngine, ctx *gin.Context) (*T, *apperr.AppError) {
 	var req T
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		return nil, vi.ParseError(err)
@@ -173,7 +182,7 @@ func BindJSON[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
 }
 
 // BindQuery binds & validates query parameters
-func BindQuery[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
+func BindQuery[T any](vi ValidatorEngine, ctx *gin.Context) (*T, *apperr.AppError) {
 	var req T
 	if err := ctx.ShouldBindQuery(&req); err != nil {
 		return nil, vi.ParseError(err)
@@ -182,7 +191,7 @@ func BindQuery[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
 }
 
 // BindURI binds & validates uri params
-func BindURI[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
+func BindURI[T any](vi ValidatorEngine, ctx *gin.Context) (*T, *apperr.AppError) {
 	var req T
 	if err := ctx.ShouldBindUri(&req); err != nil {
 		return nil, vi.ParseError(err)
@@ -191,7 +200,7 @@ func BindURI[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
 }
 
 // BindHeader binds & validates header params
-func BindHeader[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
+func BindHeader[T any](vi ValidatorEngine, ctx *gin.Context) (*T, *apperr.AppError) {
 	var req T
 	if err := ctx.ShouldBindHeader(&req); err != nil {
 		return nil, vi.ParseError(err)
@@ -200,7 +209,7 @@ func BindHeader[T any](vi *Validator, ctx *gin.Context) (*T, *apperr.AppError) {
 }
 
 // BindJSONAndURI binds and validates both JSON body and URI params
-func BindJSONAndURI[Body any, URI any](vi *Validator, ctx *gin.Context) (*Body, *URI, *apperr.AppError) {
+func BindJSONAndURI[Body any, URI any](vi ValidatorEngine, ctx *gin.Context) (*Body, *URI, *apperr.AppError) {
 	body, be := BindJSON[Body](vi, ctx)
 	if be != nil {
 		return body, new(URI), be
@@ -213,7 +222,7 @@ func BindJSONAndURI[Body any, URI any](vi *Validator, ctx *gin.Context) (*Body, 
 }
 
 // BindQueryAndURI binds and validates both query params and URI params
-func BindQueryAndURI[Query any, URI any](vi *Validator, ctx *gin.Context) (*Query, *URI, *apperr.AppError) {
+func BindQueryAndURI[Query any, URI any](vi ValidatorEngine, ctx *gin.Context) (*Query, *URI, *apperr.AppError) {
 	query, qe := BindQuery[Query](vi, ctx)
 	if qe != nil {
 		return query, new(URI), qe
@@ -226,7 +235,7 @@ func BindQueryAndURI[Query any, URI any](vi *Validator, ctx *gin.Context) (*Quer
 }
 
 // BindJSONAndQuery binds and validates both JSON body and query parameters
-func BindJSONAndQuery[Body any, Query any](vi *Validator, ctx *gin.Context) (*Body, *Query, *apperr.AppError) {
+func BindJSONAndQuery[Body any, Query any](vi ValidatorEngine, ctx *gin.Context) (*Body, *Query, *apperr.AppError) {
 	body, be := BindJSON[Body](vi, ctx)
 	if be != nil {
 		return body, new(Query), be
@@ -239,7 +248,7 @@ func BindJSONAndQuery[Body any, Query any](vi *Validator, ctx *gin.Context) (*Bo
 }
 
 // BindAll binds and validates JSON body, query params, and URI params
-func BindAll[Body any, Query any, URI any](vi *Validator, ctx *gin.Context) (*Body, *Query, *URI, *apperr.AppError) {
+func BindAll[Body any, Query any, URI any](vi ValidatorEngine, ctx *gin.Context) (*Body, *Query, *URI, *apperr.AppError) {
 	body, be := BindJSON[Body](vi, ctx)
 	if be != nil {
 		return body, new(Query), new(URI), be
@@ -256,7 +265,7 @@ func BindAll[Body any, Query any, URI any](vi *Validator, ctx *gin.Context) (*Bo
 }
 
 // BindJSONAndHeader binds JSON body and headers
-func BindJSONAndHeader[Body any, Header any](vi *Validator, ctx *gin.Context) (*Body, *Header, *apperr.AppError) {
+func BindJSONAndHeader[Body any, Header any](vi ValidatorEngine, ctx *gin.Context) (*Body, *Header, *apperr.AppError) {
 	body, be := BindJSON[Body](vi, ctx)
 	if be != nil {
 		return body, new(Header), be
@@ -269,7 +278,7 @@ func BindJSONAndHeader[Body any, Header any](vi *Validator, ctx *gin.Context) (*
 }
 
 // BindQueryAndHeader binds query params and headers
-func BindQueryAndHeader[Query any, Header any](vi *Validator, ctx *gin.Context) (*Query, *Header, *apperr.AppError) {
+func BindQueryAndHeader[Query any, Header any](vi ValidatorEngine, ctx *gin.Context) (*Query, *Header, *apperr.AppError) {
 	query, qe := BindQuery[Query](vi, ctx)
 	if qe != nil {
 		return query, new(Header), qe

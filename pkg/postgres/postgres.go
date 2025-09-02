@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"log"
 
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-// Config holds the connection parameters for Postgres
 type Config struct {
 	Host     string
 	Port     string
@@ -18,7 +19,6 @@ type Config struct {
 	SSLMode  string
 }
 
-// DB wraps the actual connection clients
 type DB struct {
 	Client *gorm.DB
 	SQL    *sql.DB

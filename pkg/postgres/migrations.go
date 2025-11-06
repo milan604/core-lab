@@ -14,7 +14,7 @@ const errCreateMigration = "Failed to create migration instance: %v"
 
 // RunMigrationsUp applies all up migrations
 func (db *DB) RunMigrationsUp(migrationsPath string) error {
-	fmt.Println("Running up migrations...", db.DSN)
+	fmt.Println("Running up migrations...", maskDSN(db.DSN))
 	m, err := migrate.New(
 		filePrefix+migrationsPath,
 		db.DSN,
@@ -37,7 +37,7 @@ func (db *DB) RunMigrationsUp(migrationsPath string) error {
 
 // RunMigrationsDown rolls back all migrations
 func (db *DB) RunMigrationsDown(migrationsPath string) error {
-	fmt.Println("Running down migrations...", db.DSN)
+	fmt.Println("Running down migrations...", maskDSN(db.DSN))
 	m, err := migrate.New(
 		filePrefix+migrationsPath,
 		db.DSN,
@@ -60,7 +60,7 @@ func (db *DB) RunMigrationsDown(migrationsPath string) error {
 
 // RunMigrationsSteps applies N up or down steps
 func (db *DB) RunMigrationsSteps(migrationsPath string, steps int) error {
-	fmt.Println("Running migration steps...", db.DSN)
+	fmt.Println("Running migration steps...", maskDSN(db.DSN))
 	m, err := migrate.New(
 		filePrefix+migrationsPath,
 		db.DSN,
@@ -79,7 +79,7 @@ func (db *DB) RunMigrationsSteps(migrationsPath string, steps int) error {
 
 // RunMigrationsForce forces the migration version
 func (db *DB) RunMigrationsForce(migrationsPath string, version int) error {
-	fmt.Println("Forcing migration version...", db.DSN)
+	fmt.Println("Forcing migration version...", maskDSN(db.DSN))
 	m, err := migrate.New(
 		filePrefix+migrationsPath,
 		db.DSN,
@@ -98,7 +98,7 @@ func (db *DB) RunMigrationsForce(migrationsPath string, version int) error {
 
 // RunMigrationsVersion returns the current migration version
 func (db *DB) RunMigrationsVersion(migrationsPath string) (uint, bool, error) {
-	fmt.Println("Getting migration version...", db.DSN)
+	fmt.Println("Getting migration version...", maskDSN(db.DSN))
 	m, err := migrate.New(
 		filePrefix+migrationsPath,
 		db.DSN,

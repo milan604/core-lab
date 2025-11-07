@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/milan604/core-lab/pkg/logger"
@@ -21,7 +19,6 @@ type Client struct {
 	logger        logger.LogManager
 	retryMax      int
 	retryDelay    time.Duration
-	baseURL       string
 	requestHooks  []RequestHook
 	responseHooks []ResponseHook
 }
@@ -63,13 +60,6 @@ func WithRetry(maxAttempts int, delay time.Duration) ClientOption {
 	return func(c *Client) {
 		c.retryMax = maxAttempts
 		c.retryDelay = delay
-	}
-}
-
-// WithBaseURL sets a base URL for all requests.
-func WithBaseURL(url string) ClientOption {
-	return func(c *Client) {
-		c.baseURL = url
 	}
 }
 
@@ -118,38 +108,13 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 	return c.executeWithRetry(ctx, req, bodyBytes)
 }
 
-// prepareRequest applies base URL, request hooks, and token injection.
+// prepareRequest applies request hooks and token injection.
 func (c *Client) prepareRequest(ctx context.Context, req *http.Request) error {
-	if err := c.applyBaseURL(req); err != nil {
-		return fmt.Errorf("failed to apply base URL: %w", err)
-	}
-
 	if err := c.applyRequestHooks(req); err != nil {
 		return err
 	}
 
 	return c.injectToken(ctx, req)
-}
-
-// applyBaseURL applies the base URL to the request if needed.
-func (c *Client) applyBaseURL(req *http.Request) error {
-	if c.baseURL == "" || req.URL.Host != "" {
-		return nil
-	}
-
-	baseURL, err := url.Parse(c.baseURL)
-	if err != nil {
-		return err
-	}
-
-	req.URL.Scheme = baseURL.Scheme
-	req.URL.Host = baseURL.Host
-	if !strings.HasPrefix(req.URL.Path, "/") {
-		req.URL.Path = baseURL.Path + "/" + req.URL.Path
-	} else {
-		req.URL.Path = baseURL.Path + req.URL.Path
-	}
-	return nil
 }
 
 // applyRequestHooks applies all request hooks.

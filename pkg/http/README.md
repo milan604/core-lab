@@ -41,13 +41,13 @@ func main() {
         http.WithTokenProvider(provider, 30*time.Second), // refresh 30s before expiration
         http.WithLogger(logger.MustNewDefaultLogger()),
         http.WithRetry(3, 100*time.Millisecond), // 3 attempts with exponential backoff
-        http.WithBaseURL("https://api.example.com"),
     )
     
     ctx := context.Background()
     
     // Make a request - token is automatically injected
-    resp, err := client.Get(ctx, "/api/v1/users")
+    // Each service call uses its own full URL
+    resp, err := client.Get(ctx, "https://api.example.com/api/v1/users")
     if err != nil {
         panic(err)
     }
@@ -55,7 +55,7 @@ func main() {
     
     // Or use JSON helper
     var users []User
-    err = client.GetJSON(ctx, "/api/v1/users", &users)
+    err = client.GetJSON(ctx, "https://api.example.com/api/v1/users", &users)
     if err != nil {
         panic(err)
     }
@@ -105,9 +105,6 @@ client := http.NewClient(
     http.WithHTTPClient(&http.Client{
         Timeout: 30 * time.Second,
     }),
-    
-    // Base URL for all requests
-    http.WithBaseURL("https://api.example.com"),
     
     // Retry configuration
     http.WithRetry(3, 100*time.Millisecond), // max attempts, initial delay
@@ -200,8 +197,8 @@ Checks if the current cached token is still valid.
 ### Making API Calls
 
 ```go
-// Simple GET request
-resp, err := client.Get(ctx, "/api/v1/users")
+// Simple GET request - each service has its own URL
+resp, err := client.Get(ctx, "https://api.example.com/api/v1/users")
 if err != nil {
     return err
 }
@@ -218,7 +215,7 @@ req := CreateUserRequest{
     Email: "john@example.com",
 }
 
-resp, err := client.Post(ctx, "/api/v1/users", req)
+resp, err := client.Post(ctx, "https://api.example.com/api/v1/users", req)
 if err != nil {
     return err
 }
@@ -232,7 +229,7 @@ type User struct {
 }
 
 var users []User
-err = client.GetJSON(ctx, "/api/v1/users", &users)
+err = client.GetJSON(ctx, "https://api.example.com/api/v1/users", &users)
 if err != nil {
     return err
 }
@@ -254,7 +251,7 @@ client := http.NewClient(
 ### Error Handling
 
 ```go
-resp, err := client.Get(ctx, "/api/v1/users")
+resp, err := client.Get(ctx, "https://api.example.com/api/v1/users")
 if err != nil {
     // Handle error (network error, token fetch failure, etc.)
     return fmt.Errorf("request failed: %w", err)
@@ -268,6 +265,22 @@ if resp.StatusCode != http.StatusOK {
 }
 ```
 
+### Using the Same Client for Multiple Services
+
+The HTTP client is designed to be reusable across different services. Each service call uses its own full URL:
+
+```go
+client := http.NewClient(
+    http.WithTokenProvider(provider, 30*time.Second),
+    http.WithLogger(logger),
+)
+
+// Call different services with their own URLs
+users, _ := client.GetJSON(ctx, "https://user-service.example.com/api/v1/users", &users)
+orders, _ := client.GetJSON(ctx, "https://order-service.example.com/api/v1/orders", &orders)
+products, _ := client.GetJSON(ctx, "https://product-service.example.com/api/v1/products", &products)
+```
+
 ## Best Practices
 
 1. **Token Refresh Buffer**: Set a reasonable refresh buffer (e.g., 30 seconds) to avoid token expiration during requests
@@ -275,6 +288,7 @@ if resp.StatusCode != http.StatusOK {
 3. **Context Usage**: Always use context.Context for cancellation and timeouts
 4. **Error Handling**: Check response status codes and handle errors appropriately
 5. **Resource Cleanup**: Always close response bodies to avoid resource leaks
+6. **Service URLs**: Each service call should use its own full URL - the client doesn't maintain a base URL
 
 ## Thread Safety
 

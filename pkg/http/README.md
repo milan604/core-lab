@@ -290,6 +290,80 @@ products, _ := client.GetJSON(ctx, "https://product-service.example.com/api/v1/p
 5. **Resource Cleanup**: Always close response bodies to avoid resource leaks
 6. **Service URLs**: Each service call should use its own full URL - the client doesn't maintain a base URL
 
+## Interfaces
+
+The package exposes interfaces for better testability and extensibility:
+
+### HTTPClient Interface
+
+The `HTTPClient` interface defines all HTTP client operations, allowing you to mock the client for testing:
+
+```go
+type HTTPClient interface {
+    Do(ctx context.Context, req *http.Request) (*http.Response, error)
+    Get(ctx context.Context, url string) (*http.Response, error)
+    Post(ctx context.Context, url string, body interface{}) (*http.Response, error)
+    Put(ctx context.Context, url string, body interface{}) (*http.Response, error)
+    Patch(ctx context.Context, url string, body interface{}) (*http.Response, error)
+    Delete(ctx context.Context, url string) (*http.Response, error)
+    DoJSON(ctx context.Context, req *http.Request, v interface{}) error
+    GetJSON(ctx context.Context, url string, v interface{}) error
+    PostJSON(ctx context.Context, url string, body interface{}, v interface{}) error
+}
+```
+
+The `Client` struct implements this interface, so you can use it wherever `HTTPClient` is expected.
+
+**Example: Using the interface for dependency injection**
+
+```go
+type UserService struct {
+    client http.HTTPClient
+}
+
+func NewUserService(client http.HTTPClient) *UserService {
+    return &UserService{client: client}
+}
+
+func (s *UserService) GetUsers(ctx context.Context) ([]User, error) {
+    var users []User
+    err := s.client.GetJSON(ctx, "https://api.example.com/users", &users)
+    return users, err
+}
+```
+
+This allows you to easily mock the HTTP client in tests:
+
+```go
+type mockHTTPClient struct{}
+
+func (m *mockHTTPClient) GetJSON(ctx context.Context, url string, v interface{}) error {
+    // Mock implementation
+    return nil
+}
+
+func TestUserService(t *testing.T) {
+    mockClient := &mockHTTPClient{}
+    service := NewUserService(mockClient)
+    // Test with mocked client
+}
+```
+
+### TokenProvider Interface
+
+The `TokenProvider` interface allows you to implement custom token fetching logic:
+
+```go
+type TokenProvider interface {
+    FetchToken(ctx context.Context) (token string, expiresAt time.Time, err error)
+}
+```
+
+The package includes several implementations:
+- `OAuth2ClientCredentialsProvider` - OAuth2 client credentials flow
+- `StaticTokenProvider` - Static token provider
+- `CustomTokenProvider` - Custom token fetching function
+
 ## Thread Safety
 
 The HTTP client and token cache are fully thread-safe and can be used concurrently from multiple goroutines.

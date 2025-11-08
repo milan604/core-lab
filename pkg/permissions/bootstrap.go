@@ -79,13 +79,17 @@ func ensurePermissions(ctx context.Context, catalog *Catalog, sentinelURL string
 		})
 	}
 
+	requestBody := map[string]interface{}{
+		"permissions": requests,
+	}
+
 	// Make HTTP call directly to sentinel service
 	url := fmt.Sprintf("%s/api/v1/permissions/bulk", sentinelURL)
 	var response struct {
 		Permissions []StandardCreateResponseEntry `json:"permissions"`
 	}
 
-	err := httpClient.PostJSON(ctx, url, requests, &response)
+	err := httpClient.PostJSON(ctx, url, requestBody, &response)
 	if err != nil {
 		return fmt.Errorf("failed to create permissions in sentinel service: %w", err)
 	}

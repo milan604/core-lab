@@ -244,7 +244,7 @@ func mapClaimsToAuthClaims(claims jwt.MapClaims) Claims {
 		IdentityID:         strings.TrimSpace(fmt.Sprint(raw["identity_id"])),
 		RoleID:             strings.TrimSpace(fmt.Sprint(raw["role_id"])),
 		TokenUse:           tokenUse,
-		ServicePermissions: decodeServicePermissions(svcPermRaw),
+		ServicePermissions: decodeServicePermissionsMultiRange(svcPermRaw),
 		Raw:                raw,
 	}
 }
@@ -275,9 +275,8 @@ func authorizationErrorStatus(err error) int {
 	return http.StatusUnauthorized
 }
 
-// decodeServicePermissions decodes service permissions from the token claim.
-func decodeServicePermissions(raw string) map[string]int64 {
-	perms := make(map[string]int64)
+func decodeServicePermissionsMultiRange(raw string) map[string][]int64 {
+	perms := make(map[string][]int64)
 	if strings.TrimSpace(raw) == "" {
 		return perms
 	}
@@ -295,15 +294,30 @@ func decodeServicePermissions(raw string) map[string]int64 {
 		if serviceKey == "" {
 			continue
 		}
-		maskStr := strings.TrimSpace(parts[1])
-		if maskStr == "" {
+		rangesStr := strings.TrimSpace(parts[1])
+		if rangesStr == "" {
 			continue
 		}
-		mask, err := strconv.ParseInt(maskStr, 36, 64)
-		if err != nil {
-			continue
+
+		// Parse comma-separated ranges
+		rangeStrs := strings.Split(rangesStr, ",")
+		ranges := make([]int64, 0, len(rangeStrs))
+		for _, rangeStr := range rangeStrs {
+			rangeStr = strings.TrimSpace(rangeStr)
+			if rangeStr == "" {
+				continue
+			}
+			mask, err := strconv.ParseInt(rangeStr, 36, 64)
+			if err != nil {
+				// Skip invalid ranges
+				continue
+			}
+			ranges = append(ranges, mask)
 		}
-		perms[serviceKey] = mask
+
+		if len(ranges) > 0 {
+			perms[serviceKey] = ranges
+		}
 	}
 	return perms
 }

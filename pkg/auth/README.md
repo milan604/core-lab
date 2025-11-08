@@ -37,10 +37,12 @@ type Claims struct {
     IdentityID         string
     RoleID             string
     TokenUse           string
-    ServicePermissions map[string]int64 // service -> bitmask
+    ServicePermissions map[string][]int64 // service -> multiple ranges [range0, range1, range2, ...]
     Raw                map[string]any
 }
 ```
+
+The `ServicePermissions` field now supports multiple ranges per service. Each range is a 63-bit bitmask, allowing for scalable permission management. The `HasPermission` method maps sequential bit positions (0, 1, 2, ...) to the appropriate range and position within that range.
 
 ### PermissionLookup Interface
 

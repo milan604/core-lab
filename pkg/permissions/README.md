@@ -107,61 +107,58 @@ userPerms := store.ListByService("USR")
 
 ## Service Integration
 
-Since permission APIs and token provider are standardized across all services, the permissions package makes HTTP calls directly to the sentinel service. **Services don't need to implement any API methods or create token providers!**
+Since permission APIs and token provider are standardized across all services, the permissions package makes HTTP calls directly to the sentinel service using `http.NewClientWithServiceToken`. **Services don't need to implement any API methods or create token providers!**
 
 ```go
 import (
-    "ecompulse/core/pkg/permissions"
-    "ecompulse/core/service"
-    "github.com/milan604/core-lab/pkg/http"
+    "github.com/milan604/core-lab/pkg/permissions"
+    "github.com/milan604/core-lab/pkg/config"
     "github.com/milan604/core-lab/pkg/logger"
 )
 
 // Create catalog from existing permissions
 catalog := service.NewPermissionsCatalog()
 
-// Create HTTP client factory (token provider created internally by permissions package)
-clientFactory := service.NewPermissionsClientFactory(logger, config, httpClient)
-
-// Create store with loader
-loader := permissions.LoaderFromHTTP(config, clientFactory)
+// Create store with loader - uses http.NewClientWithServiceToken directly
+loader := permissions.LoaderFromHTTP(config, logger)
 store := permissions.NewStore(loader)
 
 // Bootstrap - permissions package makes HTTP calls directly to sentinel service
-// Token provider is created internally - services don't need to handle it!
-if err := permissions.Bootstrap(ctx, catalog, config, logger, clientFactory, store); err != nil {
+// Uses http.NewClientWithServiceToken internally - services don't need to handle it!
+if err := permissions.Bootstrap(ctx, catalog, config, logger, store); err != nil {
     log.Fatal(err)
 }
 ```
 
 **Note**: The permissions package makes HTTP calls directly to the sentinel service. Services only need to:
 1. Create a catalog from their permission definitions
-2. Create an HTTP client factory (uses core-lab's `http.NewCustomTokenProvider` directly)
-3. Call `Bootstrap` - the package handles all HTTP calls internally
+2. Pass config and logger to `LoaderFromHTTP` and `Bootstrap`
+3. The package uses `http.NewClientWithServiceToken` internally to create HTTP clients with token provider
 
-**No API methods to implement!** The permissions package handles all HTTP calls internally. Token provider is created using core-lab's `http.NewCustomTokenProvider` directly in the HTTP client factory.
+**No API methods to implement!** The permissions package handles all HTTP calls internally using `http.NewClientWithServiceToken` directly from the http package.
 
 ## Interfaces
 
-### HTTPClientFactory Interface
+### HTTPClient Interface
 
-Services need to provide an HTTP client factory that creates HTTP clients with token provider:
+The permissions package uses the HTTPClient interface for making HTTP requests:
 
 ```go
-type HTTPClientFactory interface {
-    NewClientWithTokenProvider(ctx context.Context) (HTTPClient, error)
+type HTTPClient interface {
+    PostJSON(ctx context.Context, url string, body interface{}, response interface{}) error
+    GetJSON(ctx context.Context, url string, response interface{}) error
 }
 ```
 
-### Config Interface
+The package uses `http.NewClientWithServiceToken` internally, which returns a client that implements this interface.
 
-Services need to provide a config that can retrieve string values:
+### Config and Logger
 
-```go
-type Config interface {
-    GetString(key string) string
-}
-```
+Services need to provide:
+- `*config.Config` - Core-lab's config package instance
+- `logger.LogManager` - Core-lab's logger package instance
+
+Both are passed directly to `LoaderFromHTTP` and `Bootstrap` functions.
 
 ### Loader Function
 

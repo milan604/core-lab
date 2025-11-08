@@ -3,18 +3,22 @@ package permissions
 import (
 	"context"
 	"fmt"
+
+	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/http"
+	"github.com/milan604/core-lab/pkg/logger"
 )
 
 // LoaderFromHTTP creates a loader function that fetches permissions from the sentinel service.
-// Since permission APIs are standardized, this makes HTTP calls directly.
-func LoaderFromHTTP(cfg Config, clientFactory HTTPClientFactory) Loader {
+// Since permission APIs are standardized, this makes HTTP calls directly using http.NewClientWithServiceToken.
+func LoaderFromHTTP(cfg *config.Config, log logger.LogManager) Loader {
 	return func(ctx context.Context) (map[string]Metadata, error) {
 		if cfg == nil {
 			return nil, fmt.Errorf("config not configured")
 		}
 
-		if clientFactory == nil {
-			return nil, fmt.Errorf("HTTP client factory not configured")
+		if log == nil {
+			return nil, fmt.Errorf("logger not configured")
 		}
 
 		// Get sentinel service URL from config
@@ -23,8 +27,8 @@ func LoaderFromHTTP(cfg Config, clientFactory HTTPClientFactory) Loader {
 			return nil, fmt.Errorf("SentinelServiceEndpoint not configured")
 		}
 
-		// Create HTTP client with token provider (token provider created internally)
-		httpClient, err := clientFactory.NewClientWithTokenProvider(ctx)
+		// Create HTTP client with token provider using http package directly
+		httpClient, err := http.NewClientWithServiceToken(log, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client with token provider: %w", err)
 		}

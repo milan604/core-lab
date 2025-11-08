@@ -3,14 +3,11 @@ package permissions
 import (
 	"context"
 	"fmt"
-)
 
-// Config provides configuration for the permissions package.
-// Services only need to provide this - no API methods to implement!
-type Config interface {
-	// GetString gets a string value from config
-	GetString(key string) string
-}
+	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/http"
+	"github.com/milan604/core-lab/pkg/logger"
+)
 
 // HTTPClient is the interface for making HTTP requests.
 // Services can pass core-lab's http.Client directly.
@@ -19,25 +16,11 @@ type HTTPClient interface {
 	GetJSON(ctx context.Context, url string, response interface{}) error
 }
 
-// Logger is the interface for logging.
-type Logger interface {
-	ErrorF(format string, args ...interface{})
-	InfoF(format string, args ...interface{})
-}
-
-// HTTPClientFactory creates HTTP clients with token provider.
-// Since token provider is the same for all services, this is handled internally.
-// Services can pass a function that creates core-lab's http.Client with token provider.
-type HTTPClientFactory interface {
-	// NewClientWithTokenProvider creates a new HTTP client with token provider configured.
-	// The token provider should fetch tokens from the sentinel service.
-	NewClientWithTokenProvider(ctx context.Context) (HTTPClient, error)
-}
-
 // Bootstrap synchronizes permissions with the sentinel service and loads them into the store.
 // Since permission APIs and token provider are standardized, this function makes HTTP calls directly.
-// Services only need to provide config, logger, and HTTP client factory - no API methods or token providers needed!
-func Bootstrap(ctx context.Context, catalog *Catalog, cfg Config, logger Logger, clientFactory HTTPClientFactory, store *Store) error {
+// Services only need to provide config and logger - no API methods or token providers needed!
+// The function uses http.NewClientWithServiceToken directly from the http package.
+func Bootstrap(ctx context.Context, catalog *Catalog, cfg *config.Config, log logger.LogManager, store *Store) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -46,12 +29,8 @@ func Bootstrap(ctx context.Context, catalog *Catalog, cfg Config, logger Logger,
 		return fmt.Errorf("config not configured")
 	}
 
-	if logger == nil {
+	if log == nil {
 		return fmt.Errorf("logger not configured")
-	}
-
-	if clientFactory == nil {
-		return fmt.Errorf("HTTP client factory not configured")
 	}
 
 	if catalog == nil {
@@ -64,8 +43,8 @@ func Bootstrap(ctx context.Context, catalog *Catalog, cfg Config, logger Logger,
 		return fmt.Errorf("SentinelServiceEndpoint not configured")
 	}
 
-	// Create HTTP client with token provider (token provider created internally)
-	httpClient, err := clientFactory.NewClientWithTokenProvider(ctx)
+	// Create HTTP client with token provider using http package directly
+	httpClient, err := http.NewClientWithServiceToken(log, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP client with token provider: %w", err)
 	}

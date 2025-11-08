@@ -38,3 +38,4 @@ type HTTPClient interface {
 
 // Ensure Client implements HTTPClient interface.
 var _ HTTPClient = (*Client)(nil)
+

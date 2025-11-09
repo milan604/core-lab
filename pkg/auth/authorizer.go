@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -151,7 +153,7 @@ func newJWTVerifier(cfg Config) (*jwtVerifier, error) {
 		return nil, fmt.Errorf("jwt authorizer: RSAPublicKey not configured")
 	}
 
-	parsedKey, err := parseRSAPublicKey(pubKey)
+	parsedKey, err := parsePublicKey(pubKey)
 	if err != nil {
 		return nil, fmt.Errorf("jwt authorizer: parse public key: %w", err)
 	}
@@ -170,9 +172,26 @@ func newJWTVerifier(cfg Config) (*jwtVerifier, error) {
 // Verify validates and parses a JWT token string.
 func (v *jwtVerifier) Verify(tokenString string) (Claims, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// Validate signing method
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		// Validate signing method matches the public key type
+		switch key := v.publicKey.(type) {
+		case *rsa.PublicKey:
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v (expected RSA)", token.Header["alg"])
+			}
+		case *ecdsa.PublicKey:
+			if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v (expected ECDSA)", token.Header["alg"])
+			}
+			// Validate curve matches the key
+			ecdsaMethod, ok := token.Method.(*jwt.SigningMethodECDSA)
+			if ok {
+				expectedCurve := getCurveForECDSAKey(key)
+				if ecdsaMethod.CurveBits != expectedCurve {
+					return nil, fmt.Errorf("ECDSA curve mismatch: token uses %d bits, key is %d bits", ecdsaMethod.CurveBits, expectedCurve)
+				}
+			}
+		default:
+			return nil, fmt.Errorf("unsupported public key type: %T", v.publicKey)
 		}
 		return v.publicKey, nil
 	})
@@ -325,12 +344,12 @@ func decodeServicePermissionsMultiRange(raw string) map[string][]int64 {
 	return perms
 }
 
-// parseRSAPublicKey parses a public key from a base64-encoded PEM string.
+// parsePublicKey parses a public key from a base64-encoded PEM string.
 // Supports all formats that Sentinel service uses:
-// - PKCS#8 format: "-----BEGIN PUBLIC KEY-----" (uses x509.ParsePKIXPublicKey)
-// - PKCS#1 format: "-----BEGIN RSA PUBLIC KEY-----" (uses x509.ParsePKCS1PublicKey)
-// - EC format: "-----BEGIN EC PUBLIC KEY-----" (uses x509.ParsePKIXPublicKey)
-func parseRSAPublicKey(pubKeyBase64 string) (interface{}, error) {
+// - PKCS#8 format: "-----BEGIN PUBLIC KEY-----" (uses x509.ParsePKIXPublicKey) - supports RSA and ECDSA
+// - PKCS#1 format: "-----BEGIN RSA PUBLIC KEY-----" (uses x509.ParsePKCS1PublicKey) - RSA only
+// - EC format: "-----BEGIN EC PUBLIC KEY-----" (uses x509.ParsePKIXPublicKey) - ECDSA only
+func parsePublicKey(pubKeyBase64 string) (interface{}, error) {
 	// Decode base64 if needed
 	normalized := strings.TrimSpace(pubKeyBase64)
 	if normalized == "" {
@@ -366,19 +385,44 @@ func parseRSAPublicKey(pubKeyBase64 string) (interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse PKIX public key: %w", err)
 		}
-		// Ensure it's an RSA key for JWT verification
-		if rsaKey, ok := key.(*rsa.PublicKey); ok {
-			return rsaKey, nil
+		// Support both RSA and ECDSA keys
+		switch k := key.(type) {
+		case *rsa.PublicKey:
+			return k, nil
+		case *ecdsa.PublicKey:
+			return k, nil
+		default:
+			return nil, fmt.Errorf("unsupported public key type in PKIX format: %T", key)
 		}
-		return nil, fmt.Errorf("public key is not RSA (got %T)", key)
 	case "RSA PUBLIC KEY":
 		// PKCS#1 format - RSA only
 		return x509.ParsePKCS1PublicKey(block.Bytes)
 	case "EC PUBLIC KEY":
-		// EC format - not supported for RSA JWT verification
-		return nil, errors.New("EC public keys are not supported for RSA JWT verification")
+		// EC format - ECDSA only
+		key, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse EC public key: %w", err)
+		}
+		if ecdsaKey, ok := key.(*ecdsa.PublicKey); ok {
+			return ecdsaKey, nil
+		}
+		return nil, fmt.Errorf("EC public key block does not contain ECDSA key (got %T)", key)
 	default:
 		return nil, fmt.Errorf("unsupported public key type: %s", block.Type)
+	}
+}
+
+// getCurveForECDSAKey returns the curve bit size for an ECDSA public key.
+func getCurveForECDSAKey(key *ecdsa.PublicKey) int {
+	switch key.Curve {
+	case elliptic.P256():
+		return 256
+	case elliptic.P384():
+		return 384
+	case elliptic.P521():
+		return 521
+	default:
+		return 0
 	}
 }
 

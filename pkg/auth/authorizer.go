@@ -1,7 +1,10 @@
 package auth
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -322,13 +325,61 @@ func decodeServicePermissionsMultiRange(raw string) map[string][]int64 {
 	return perms
 }
 
-// parseRSAPublicKey parses an RSA public key from a base64-encoded PEM string.
+// parseRSAPublicKey parses a public key from a base64-encoded PEM string.
+// Supports all formats that Sentinel service uses:
+// - PKCS#8 format: "-----BEGIN PUBLIC KEY-----" (uses x509.ParsePKIXPublicKey)
+// - PKCS#1 format: "-----BEGIN RSA PUBLIC KEY-----" (uses x509.ParsePKCS1PublicKey)
+// - EC format: "-----BEGIN EC PUBLIC KEY-----" (uses x509.ParsePKIXPublicKey)
 func parseRSAPublicKey(pubKeyBase64 string) (interface{}, error) {
-	publicKey, err := base64.StdEncoding.DecodeString(pubKeyBase64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode public key: %w", err)
+	// Decode base64 if needed
+	normalized := strings.TrimSpace(pubKeyBase64)
+	if normalized == "" {
+		return nil, errors.New("empty public key data")
 	}
-	return jwt.ParseRSAPublicKeyFromPEM(publicKey)
+
+	// If it doesn't contain PEM headers, try to decode from base64
+	if !strings.Contains(normalized, "-----BEGIN") {
+		decoded, err := base64.StdEncoding.DecodeString(normalized)
+		if err != nil {
+			// Try URL-safe base64
+			decodedURL, errURL := base64.RawStdEncoding.DecodeString(normalized)
+			if errURL != nil {
+				return nil, fmt.Errorf("failed to decode public key: %w", err)
+			}
+			normalized = string(decodedURL)
+		} else {
+			normalized = string(decoded)
+		}
+	}
+
+	// Decode PEM block
+	block, _ := pem.Decode([]byte(normalized))
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	// Parse based on block type (matching Sentinel's ParsePublicKey implementation)
+	switch block.Type {
+	case "PUBLIC KEY":
+		// PKCS#8 format - supports RSA, ECDSA, etc.
+		key, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse PKIX public key: %w", err)
+		}
+		// Ensure it's an RSA key for JWT verification
+		if rsaKey, ok := key.(*rsa.PublicKey); ok {
+			return rsaKey, nil
+		}
+		return nil, fmt.Errorf("public key is not RSA (got %T)", key)
+	case "RSA PUBLIC KEY":
+		// PKCS#1 format - RSA only
+		return x509.ParsePKCS1PublicKey(block.Bytes)
+	case "EC PUBLIC KEY":
+		// EC format - not supported for RSA JWT verification
+		return nil, errors.New("EC public keys are not supported for RSA JWT verification")
+	default:
+		return nil, fmt.Errorf("unsupported public key type: %s", block.Type)
+	}
 }
 
 // parseAudience parses the audience string into a slice.

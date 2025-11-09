@@ -62,9 +62,16 @@ func NewAuthorizer(cfg Config, log logger.LogManager) (*Authorizer, error) {
 // It validates that the caller has the required bitmask permission.
 func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Get logger from context if available, otherwise use stored logger
+		log := logger.GetLogger(c)
+		if log == nil {
+			log = a.log
+		}
+
 		claims, err := a.authenticate(c)
 		if err != nil {
-			a.abortAuthError(c, err)
+			log.ErrorFCtx(c.Request.Context(), "Authentication failed: %v", err)
+			a.abortAuthError(c, err, log)
 			return
 		}
 
@@ -78,23 +85,32 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 		// This avoids import cycles by using an interface
 		val, exists := c.Get(string(CtxMiddlewareServiceKey))
 		if !exists {
-			a.abortWithJSON(c, http.StatusInternalServerError, "service_not_available", "service not available in context")
+			log.ErrorFCtx(c.Request.Context(), "Permission check failed: service not available in context", "permission", code)
+			a.abortWithJSON(c, http.StatusInternalServerError, "service_not_available", "service not available in context", log)
 			return
 		}
 		lookup, ok := val.(PermissionLookup)
 		if !ok {
-			a.abortWithJSON(c, http.StatusInternalServerError, "service_invalid", "service does not implement PermissionLookup")
+			log.ErrorFCtx(c.Request.Context(), "Permission check failed: service does not implement PermissionLookup", "permission", code)
+			a.abortWithJSON(c, http.StatusInternalServerError, "service_invalid", "service does not implement PermissionLookup", log)
 			return
 		}
 		metadata, ok := lookup.LookupPermission(code)
 		if !ok {
-			a.abortWithJSON(c, http.StatusForbidden, "permission_not_registered", "permission is not registered in sentinel")
+			log.WarnFCtx(c.Request.Context(), "Permission check failed: permission not registered in sentinel", "permission", code)
+			a.abortWithJSON(c, http.StatusForbidden, "permission_not_registered", "permission is not registered in sentinel", log)
 			return
 		}
 
 		// Check if caller has the required bitmask permission
 		if !claims.HasPermission(metadata.Service, metadata.BitValue) {
-			a.abortWithJSON(c, http.StatusForbidden, "permission_denied", "caller lacks required permission")
+			log.WarnFCtx(c.Request.Context(), "Permission check failed: caller lacks required permission",
+				"permission", code,
+				"service", metadata.Service,
+				"bit_value", metadata.BitValue,
+				"subject", claims.Subject,
+			)
+			a.abortWithJSON(c, http.StatusForbidden, "permission_denied", "caller lacks required permission", log)
 			return
 		}
 
@@ -104,14 +120,22 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 
 // authenticate extracts and verifies the JWT token from the request.
 func (a *Authorizer) authenticate(c *gin.Context) (Claims, error) {
+	// Get logger from context if available, otherwise use stored logger
+	log := logger.GetLogger(c)
+	if log == nil {
+		log = a.log
+	}
+
 	header := c.GetHeader("Authorization")
 	token, err := extractBearerToken(header)
 	if err != nil {
+		log.ErrorFCtx(c.Request.Context(), "Failed to extract bearer token: %v", err)
 		return Claims{}, err
 	}
 
 	claims, err := a.verifier.Verify(token)
 	if err != nil {
+		log.ErrorFCtx(c.Request.Context(), "Failed to verify JWT token: %v", err)
 		return Claims{}, err
 	}
 
@@ -121,17 +145,26 @@ func (a *Authorizer) authenticate(c *gin.Context) (Claims, error) {
 }
 
 // abortAuthError handles authentication/authorization errors.
-func (a *Authorizer) abortAuthError(c *gin.Context, err error) {
+func (a *Authorizer) abortAuthError(c *gin.Context, err error, log logger.LogManager) {
 	status := authorizationErrorStatus(err)
 	if status == http.StatusUnauthorized {
-		a.abortWithJSON(c, status, "invalid_token", "authentication required")
+		log.ErrorFCtx(c.Request.Context(), "Authentication error: %v", err)
+		a.abortWithJSON(c, status, "invalid_token", "authentication required", log)
 		return
 	}
-	a.abortWithJSON(c, status, "authorization_failed", "authorization failed")
+	log.ErrorFCtx(c.Request.Context(), "Authorization error: %v", err)
+	a.abortWithJSON(c, status, "authorization_failed", "authorization failed", log)
 }
 
 // abortWithJSON aborts the request with a JSON error response.
-func (a *Authorizer) abortWithJSON(c *gin.Context, status int, code, message string) {
+func (a *Authorizer) abortWithJSON(c *gin.Context, status int, code, message string, log logger.LogManager) {
+	// Log the error with context for observability
+	log.ErrorFCtx(c.Request.Context(), "Request aborted: %s - %s", code, message,
+		"status", status,
+		"path", c.FullPath(),
+		"method", c.Request.Method,
+	)
+
 	c.AbortWithStatusJSON(status, gin.H{
 		"error":   code,
 		"message": message,

@@ -7,7 +7,7 @@ type PermissionSource interface {
 	GetDescription() string
 	GetService() string
 	GetCategory() string
-	GetSubCategory() string
+	GetAction() string
 }
 
 // FromDefinitions converts a slice of permission definitions to a Catalog.
@@ -26,7 +26,7 @@ func FromSource[T PermissionSource](sources map[string]T) *Catalog {
 			Reference: Reference{
 				Service:     source.GetService(),
 				Category:    source.GetCategory(),
-				SubCategory: source.GetSubCategory(),
+				Action: source.GetAction(),
 			},
 			Name:        source.GetName(),
 			Description: source.GetDescription(),
@@ -46,7 +46,7 @@ func FromSlice[T PermissionSource](sources []T) *Catalog {
 			Reference: Reference{
 				Service:     source.GetService(),
 				Category:    source.GetCategory(),
-				SubCategory: source.GetSubCategory(),
+				Action: source.GetAction(),
 			},
 			Name:        source.GetName(),
 			Description: source.GetDescription(),

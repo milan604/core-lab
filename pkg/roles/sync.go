@@ -181,7 +181,7 @@ func assignPermissionsToRole(ctx context.Context, roleID string, permissionRefs 
 	// Convert permission references to codes
 	codes := make([]string, 0, len(permissionRefs))
 	for _, ref := range permissionRefs {
-		code := permissions.GenerateCode(ref.Service, ref.Category, ref.SubCategory)
+		code := permissions.GenerateCode(ref.Service, ref.Category, ref.Action)
 		codes = append(codes, code)
 	}
 

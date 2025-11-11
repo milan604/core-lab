@@ -75,7 +75,7 @@ func ensurePermissions(ctx context.Context, catalog *Catalog, sentinelURL string
 			Description: def.Description,
 			Service:     def.Reference.Service,
 			Category:    def.Reference.Category,
-			SubCategory: def.Reference.SubCategory,
+			Action: def.Reference.Action,
 		})
 	}
 

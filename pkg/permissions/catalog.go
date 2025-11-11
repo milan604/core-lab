@@ -4,16 +4,16 @@ import (
 	"strings"
 )
 
-// Reference represents a permission reference with service, category, and subcategory.
+// Reference represents a permission reference with service, category, and action.
 type Reference struct {
-	Service     string
-	Category    string
-	SubCategory string
+	Service  string
+	Category string
+	Action   string
 }
 
 // Code generates a permission code from the reference.
 func (r Reference) Code() string {
-	return GenerateCode(r.Service, r.Category, r.SubCategory)
+	return GenerateCode(r.Service, r.Category, r.Action)
 }
 
 // Definition represents a permission definition with its reference and metadata.
@@ -77,29 +77,9 @@ func (c *Catalog) Count() int {
 	return len(c.definitions)
 }
 
-// GenerateCode generates a permission code from service, category, and subcategory.
-func GenerateCode(service, category, subCategory string) string {
-	short := func(s string) string {
-		ns := normalize(s)
-		if len(ns) == 0 {
-			return ""
-		}
-		if len(ns) >= 3 {
-			return strings.ToUpper(ns[:3])
-		}
-		return strings.ToUpper(ns)
-	}
-	parts := make([]string, 0, 3)
-	if v := short(service); v != "" {
-		parts = append(parts, v)
-	}
-	if v := short(category); v != "" {
-		parts = append(parts, v)
-	}
-	if v := short(subCategory); v != "" {
-		parts = append(parts, v)
-	}
-	return strings.Join(parts, "-")
+// GenerateCode generates a permission code from service, category, and action.
+func GenerateCode(service, category, action string) string {
+	return normalize(service) + "-" + normalize(category) + "-" + normalize(action)
 }
 
 func normalize(s string) string {

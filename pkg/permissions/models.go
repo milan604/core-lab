@@ -7,7 +7,7 @@ type CreateRequest struct {
 	Name         string   `json:"name" binding:"required"`
 	Service      string   `json:"service" binding:"required"`
 	Category     string   `json:"category" binding:"required"`
-	SubCategory  string   `json:"sub_category" binding:"required"`
+	Action       string   `json:"action" binding:"required"`
 	Description  string   `json:"description" binding:"required"`
 	FeatureFlags []string `json:"feature_flags,omitempty"`
 }
@@ -44,7 +44,7 @@ type CatalogEntry struct {
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
 	Category     string   `json:"category"`
-	SubCategory  string   `json:"sub_category"`
+	Action       string   `json:"action"`
 	Code         string   `json:"code"`
 	BitValue     int64    `json:"bit_value"`
 	FeatureFlags []string `json:"feature_flags,omitempty"`
@@ -89,7 +89,7 @@ type StandardCreateRequest struct {
 	Name         string   `json:"name" binding:"required"`
 	Service      string   `json:"service" binding:"required"`
 	Category     string   `json:"category" binding:"required"`
-	SubCategory  string   `json:"sub_category" binding:"required"`
+	Action       string   `json:"action" binding:"required"`
 	FeatureFlags []string `json:"feature_flags,omitempty"`
 	Description  string   `json:"description" binding:"required"`
 }
@@ -126,7 +126,7 @@ type StandardCatalogEntry struct {
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
 	Category     string   `json:"category"`
-	SubCategory  string   `json:"sub_category"`
+	Action       string   `json:"action"`
 	Code         string   `json:"code"`
 	BitValue     int64    `json:"bit_value"`
 	FeatureFlags []string `json:"feature_flags,omitempty"`

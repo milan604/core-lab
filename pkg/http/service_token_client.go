@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/milan604/core-lab/pkg/config"
@@ -35,9 +36,6 @@ func NewServiceTokenProvider(cfg ServiceTokenProviderConfig) *ServiceTokenProvid
 	if cfg.Scope == "" {
 		cfg.Scope = "service"
 	}
-	if len(cfg.Audience) == 0 {
-		cfg.Audience = []string{"sentinel"}
-	}
 
 	// Create a basic client without token provider for fetching tokens if not provided
 	httpClient := cfg.HTTPClient
@@ -67,16 +65,15 @@ func (p *ServiceTokenProvider) FetchToken(ctx context.Context) (string, time.Tim
 		return "", time.Time{}, fmt.Errorf("API key is required")
 	}
 
-	req := struct {
-		ServiceID string   `json:"service_id"`
-		APIKey    string   `json:"api_key"`
-		Scope     string   `json:"scope"`
-		Audience  []string `json:"audience"`
-	}{
-		ServiceID: p.ServiceID,
-		APIKey:    p.APIKey,
-		Scope:     p.Scope,
-		Audience:  p.Audience,
+	req := map[string]any{
+		"service_id": p.ServiceID,
+		"api_key":    p.APIKey,
+	}
+	if scope := strings.TrimSpace(p.Scope); scope != "" {
+		req["scope"] = scope
+	}
+	if len(p.Audience) > 0 {
+		req["audience"] = p.Audience
 	}
 
 	var resp struct {
@@ -127,10 +124,19 @@ func (p *ServiceTokenProvider) parseExpirationTime(expiresAtStr string, expiresI
 // - SentinelServiceID: Service ID for authentication
 // - SentinelServiceAPIKey: API key for authentication
 func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Client, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config not configured")
+	}
+
 	// Get configuration
-	sentinelServiceURL := cfg.GetString("SentinelServiceEndpoint")
+	sentinelServiceURL := NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
 	serviceID := cfg.GetString("SentinelServiceID")
 	apiKey := cfg.GetString("SentinelServiceAPIKey")
+	tokenScope := strings.TrimSpace(cfg.GetString("SentinelServiceTokenScope"))
+	tokenAudience := parseAudienceList(cfg.GetStringSlice("SentinelTokenAudience"))
+	if len(tokenAudience) == 0 {
+		tokenAudience = parseAudience(cfg.GetString("SentinelTokenAudience"))
+	}
 
 	// Validate configuration
 	if err := cfg.ValidateRequired("SentinelServiceEndpoint", "SentinelServiceID", "SentinelServiceAPIKey"); err != nil {
@@ -146,6 +152,8 @@ func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Clie
 		ServiceURL: sentinelServiceURL,
 		ServiceID:  serviceID,
 		APIKey:     apiKey,
+		Scope:      tokenScope,
+		Audience:   tokenAudience,
 		HTTPClient: baseClient,
 	})
 
@@ -154,4 +162,41 @@ func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Clie
 		WithLogger(log),
 		WithTokenProvider(tokenProvider, 1*time.Minute), // Refresh buffer of 1 minute
 	), nil
+}
+
+func parseAudience(audStr string) []string {
+	if strings.TrimSpace(audStr) == "" {
+		return nil
+	}
+
+	parts := strings.Split(audStr, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func parseAudienceList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

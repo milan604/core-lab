@@ -18,6 +18,14 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 		ctx = context.Background()
 	}
 
+	if cfg == nil {
+		return fmt.Errorf("config not configured")
+	}
+
+	if log == nil {
+		return fmt.Errorf("logger not configured")
+	}
+
 	if len(definitions) == 0 {
 		log.WarnFCtx(ctx, "No role definitions provided, skipping roles validation")
 		return nil
@@ -39,7 +47,10 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 	log.InfoFCtx(ctx, "Verified %d role definitions", len(validatedRoles))
 
 	// Step 2: Create HTTP client for Sentinel service (similar to permissions package)
-	sentinelURL := cfg.GetString("SentinelServiceEndpoint")
+	sentinelURL := http.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
+	if sentinelURL == "" {
+		return fmt.Errorf("SentinelServiceEndpoint not configured")
+	}
 
 	// Create HTTP client with service token authentication (similar to permissions package)
 	// This uses http.NewClientWithServiceToken internally, which handles service token authentication

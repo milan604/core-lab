@@ -22,7 +22,7 @@ func LoaderFromHTTP(cfg *config.Config, log logger.LogManager) Loader {
 		}
 
 		// Get sentinel service URL from config
-		sentinelURL := cfg.GetString("SentinelServiceEndpoint")
+		sentinelURL := http.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
 		if sentinelURL == "" {
 			return nil, fmt.Errorf("SentinelServiceEndpoint not configured")
 		}

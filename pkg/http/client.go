@@ -58,6 +58,12 @@ func WithLogger(l logger.LogManager) ClientOption {
 // delay is the initial delay between retries (will be exponential backoff).
 func WithRetry(maxAttempts int, delay time.Duration) ClientOption {
 	return func(c *Client) {
+		if maxAttempts <= 0 {
+			maxAttempts = 1
+		}
+		if delay <= 0 {
+			delay = 100 * time.Millisecond
+		}
 		c.retryMax = maxAttempts
 		c.retryDelay = delay
 	}

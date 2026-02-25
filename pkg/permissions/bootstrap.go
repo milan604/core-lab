@@ -38,7 +38,7 @@ func Bootstrap(ctx context.Context, catalog *Catalog, cfg *config.Config, log lo
 	}
 
 	// Get sentinel service URL from config
-	sentinelURL := cfg.GetString("SentinelServiceEndpoint")
+	sentinelURL := http.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
 	if sentinelURL == "" {
 		return fmt.Errorf("SentinelServiceEndpoint not configured")
 	}
@@ -75,7 +75,7 @@ func ensurePermissions(ctx context.Context, catalog *Catalog, sentinelURL string
 			Description: def.Description,
 			Service:     def.Reference.Service,
 			Category:    def.Reference.Category,
-			Action: def.Reference.Action,
+			Action:      def.Reference.Action,
 		})
 	}
 

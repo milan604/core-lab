@@ -50,11 +50,7 @@ func New(log logger.LogManager, cfg *config.Config) (ObservabilityIface, error) 
 		serviceVersion = "1.0.0"
 	}
 
-	// Get SigNoz endpoint from config (defaults to localhost:4318 for OTLP HTTP)
-	signozEndpoint := cfg.GetString("SIGNOZ_ENDPOINT")
-	if signozEndpoint == "" {
-		signozEndpoint = "http://localhost:4318"
-	}
+	signozEndpoint := resolveSignozEndpoint(cfg)
 
 	// Create resource with service information
 	res, err := resource.New(
@@ -69,11 +65,7 @@ func New(log logger.LogManager, cfg *config.Config) (ObservabilityIface, error) 
 	}
 
 	// Create OTLP HTTP exporter for SigNoz
-	exporter, err := otlptracehttp.New(
-		context.Background(),
-		otlptracehttp.WithEndpoint(signozEndpoint),
-		otlptracehttp.WithInsecure(), // Use WithTLSClientConfig for production
-	)
+	exporter, err := otlptracehttp.New(context.Background(), otlpTraceExporterOptions(signozEndpoint)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OTLP exporter: %w", err)
 	}

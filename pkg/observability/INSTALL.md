@@ -47,7 +47,7 @@ Add to your config file (`env/config.json` or environment variables):
 {
   "service_name": "ecompulse",
   "service_version": "1.0.0",
-  "SIGNOZ_ENDPOINT": "http://localhost:4318"
+  "SignozEndpoint": "http://localhost:4318"
 }
 ```
 
@@ -55,6 +55,8 @@ Or via environment variable:
 ```bash
 export SIGNOZ_ENDPOINT=http://localhost:4318
 ```
+
+`SignozEndpoint` is the preferred JSON/config key. `SIGNOZ_ENDPOINT` is still supported for backward compatibility.
 
 ## Network Setup
 
@@ -65,4 +67,3 @@ docker network create shared-net
 ```
 
 Or use the existing network from your docker-compose.yml.
-

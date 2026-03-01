@@ -50,7 +50,7 @@ Add to your config file or environment variables:
 {
   "service_name": "my-service",
   "service_version": "1.0.0",
-  "SIGNOZ_ENDPOINT": "http://localhost:4318"
+  "SignozEndpoint": "http://localhost:4318"
 }
 ```
 
@@ -58,6 +58,8 @@ Or via environment variable:
 ```bash
 export SIGNOZ_ENDPOINT=http://localhost:4318
 ```
+
+`SignozEndpoint` is the preferred JSON/config key. `SIGNOZ_ENDPOINT` is still supported for backward compatibility.
 
 ### 3. Automatic HTTP Tracing
 
@@ -389,7 +391,7 @@ This package is designed to be easily migrated to `core-lab`:
 ### Traces not appearing in SigNoz
 
 1. Check SigNoz is running: `docker ps | grep signoz`
-2. Verify endpoint: Check `SIGNOZ_ENDPOINT` config
+2. Verify endpoint: Check `SignozEndpoint` (or legacy `SIGNOZ_ENDPOINT`) config
 3. Check logs: `docker logs signoz-otel-collector`
 4. Verify network: Ensure services are on the same Docker network
 
@@ -407,4 +409,3 @@ sdktrace.WithSampler(sdktrace.TraceIDRatioBased(0.1)) // Sample 10% of traces
 - [OpenTelemetry Go](https://opentelemetry.io/docs/instrumentation/go/)
 - [SigNoz Documentation](https://signoz.io/docs/)
 - [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)
-

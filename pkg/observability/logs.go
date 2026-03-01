@@ -17,7 +17,7 @@ import (
 
 // LogExporter manages log export to SigNoz via HTTP
 type LogExporter struct {
-	signozEndpoint string
+	signozLogsURL  string
 	serviceName    string
 	serviceVersion string
 	httpClient     *http.Client
@@ -54,14 +54,10 @@ func NewLogExporter(cfg *config.Config) (*LogExporter, error) {
 		serviceVersion = "1.0.0"
 	}
 
-	// Get SigNoz endpoint from config (defaults to localhost:4318 for OTLP HTTP)
-	signozEndpoint := cfg.GetString("SIGNOZ_ENDPOINT")
-	if signozEndpoint == "" {
-		signozEndpoint = "http://localhost:4318"
-	}
+	signozEndpoint := resolveSignozEndpoint(cfg)
 
 	exporter := &LogExporter{
-		signozEndpoint: signozEndpoint,
+		signozLogsURL:  buildSignozLogsURL(signozEndpoint),
 		serviceName:    serviceName,
 		serviceVersion: serviceVersion,
 		httpClient: &http.Client{
@@ -165,9 +161,8 @@ func (le *LogExporter) Flush(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal logs: %w", err)
 	}
 
-	// Send to SigNoz OTLP logs endpoint
-	url := fmt.Sprintf("%s/v1/logs", le.signozEndpoint)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+	// Send to SigNoz OTLP logs endpoint.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, le.signozLogsURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

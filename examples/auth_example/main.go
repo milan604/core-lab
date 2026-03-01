@@ -31,14 +31,14 @@ func main() {
 			"service.endpoint": "0.0.0.0",
 			"service.port":     "8080",
 			"service_name":     "observability-example",
-			"service_version":  version.Info().Version,
-			"SIGNOZ_ENDPOINT":  "http://localhost:4318",
+			"service_version":  version.Version,
+			"SignozEndpoint":   "http://localhost:4318",
 		}),
 		config.WithEnv("APP"),
 		config.WithAutoPFlags(),
 	)
 	log := logger.MustNewDefaultLogger()
-	log.InfoF("starting example server", "version", version.Info())
+	log.InfoF("starting example server version=%v", version.Info())
 
 	// Initialize observability (traces, metrics, and logs)
 	obs, err := observability.New(log, cfg)
@@ -114,7 +114,7 @@ func main() {
 		msg := tr.T(loc, "greeting", map[string]any{"name": "world"})
 
 		// Log with context - trace ID will be included automatically
-		log.InfoFCtx(ctx, "i18n greeting generated", "locale", loc)
+		log.InfoFCtx(ctx, "i18n greeting generated locale=%s", loc)
 
 		c.JSON(http.StatusOK, gin.H{"locale": loc, "message": msg})
 	})
@@ -140,7 +140,7 @@ func main() {
 			if obs != nil {
 				observability.RecordSpanError(ctx, err)
 			}
-			log.ErrorFCtx(ctx, "failed to create user", "error", err)
+			log.ErrorFCtx(ctx, "failed to create user error=%v", err)
 			response.HandleError(c, err)
 			return
 		}
@@ -149,7 +149,7 @@ func main() {
 		slug := utils.Slugify(body.Name)
 
 		// Log success with context - trace ID included automatically
-		log.InfoFCtx(ctx, "user created successfully", "user_id", slug, "email", body.Email)
+		log.InfoFCtx(ctx, "user created successfully user_id=%s email=%s", slug, body.Email)
 
 		response.Success(c, gin.H{"id": fmt.Sprintf("user:%s", slug), "email": body.Email})
 	})
@@ -171,7 +171,7 @@ func main() {
 		if obs != nil {
 			observability.RecordSpanError(ctx, err)
 		}
-		log.ErrorFCtx(ctx, "demo error occurred", "error", err)
+		log.ErrorFCtx(ctx, "demo error occurred error=%v", err)
 
 		response.HandleError(c, err)
 	})
@@ -209,7 +209,7 @@ func main() {
 		}
 
 		// Log item access with context - trace ID included automatically
-		log.InfoFCtx(ctx, "item retrieved", "item_id", itemID)
+		log.InfoFCtx(ctx, "item retrieved item_id=%s", itemID)
 
 		c.JSON(200, gin.H{"item": itemID, "status": "ok"})
 	})

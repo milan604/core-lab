@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -323,86 +325,167 @@ func NewLoggerWithSigNoz(cfg *config.Config, logOpts logger.LoggerOptions) (logg
 type LogManagerWrapper struct {
 	original logger.LogManager
 	exporter *LogExporter
+	fields   map[string]interface{}
+}
+
+// keyValuesToFields converts logger.With-style key/value slices to a map.
+func keyValuesToFields(keyValues ...any) map[string]interface{} {
+	if len(keyValues) == 0 {
+		return nil
+	}
+
+	fields := make(map[string]interface{}, len(keyValues)/2)
+	for i := 0; i < len(keyValues); i += 2 {
+		key := strings.TrimSpace(fmt.Sprintf("%v", keyValues[i]))
+		if key == "" {
+			continue
+		}
+
+		var value interface{}
+		if i+1 < len(keyValues) {
+			value = keyValues[i+1]
+		}
+
+		fields[key] = value
+	}
+
+	if len(fields) == 0 {
+		return nil
+	}
+
+	return fields
+}
+
+func cloneFields(fields map[string]interface{}) map[string]interface{} {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]interface{}, len(fields))
+	for key, value := range fields {
+		cloned[key] = value
+	}
+
+	return cloned
+}
+
+func mergeFields(base map[string]interface{}, extra map[string]interface{}) map[string]interface{} {
+	if len(base) == 0 && len(extra) == 0 {
+		return nil
+	}
+
+	merged := cloneFields(base)
+	if len(extra) == 0 {
+		return merged
+	}
+	if merged == nil {
+		merged = make(map[string]interface{}, len(extra))
+	}
+	for key, value := range extra {
+		merged[key] = value
+	}
+
+	return merged
+}
+
+func normalizeLogMessage(message string, fields map[string]interface{}) string {
+	if strings.TrimSpace(message) != "" {
+		return message
+	}
+
+	if fields != nil {
+		if logType, ok := fields["log_type"]; ok && logType != nil {
+			return fmt.Sprintf("%v", logType)
+		}
+	}
+
+	return "log_entry"
+}
+
+func (l *LogManagerWrapper) emit(ctx context.Context, level, message string) {
+	resolvedFields := cloneFields(l.fields)
+	resolvedMessage := normalizeLogMessage(message, resolvedFields)
+	l.exporter.EmitLog(ctx, level, resolvedMessage, resolvedFields)
 }
 
 // Debug logs a debug message
 func (l *LogManagerWrapper) Debug(args ...any) {
 	l.original.Debug(args...)
-	l.exporter.EmitLog(context.Background(), "DEBUG", fmt.Sprint(args...), nil)
+	l.emit(context.Background(), "DEBUG", fmt.Sprint(args...))
 }
 
 // Info logs an info message
 func (l *LogManagerWrapper) Info(args ...any) {
 	l.original.Info(args...)
-	l.exporter.EmitLog(context.Background(), "INFO", fmt.Sprint(args...), nil)
+	l.emit(context.Background(), "INFO", fmt.Sprint(args...))
 }
 
 // Warn logs a warning message
 func (l *LogManagerWrapper) Warn(args ...any) {
 	l.original.Warn(args...)
-	l.exporter.EmitLog(context.Background(), "WARN", fmt.Sprint(args...), nil)
+	l.emit(context.Background(), "WARN", fmt.Sprint(args...))
 }
 
 // Error logs an error message
 func (l *LogManagerWrapper) Error(args ...any) {
 	l.original.Error(args...)
-	l.exporter.EmitLog(context.Background(), "ERROR", fmt.Sprint(args...), nil)
+	l.emit(context.Background(), "ERROR", fmt.Sprint(args...))
 }
 
 // DebugF logs a formatted debug message
 func (l *LogManagerWrapper) DebugF(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.DebugF(format, args...)
-	l.exporter.EmitLog(context.Background(), "DEBUG", message, nil)
+	l.emit(context.Background(), "DEBUG", message)
 }
 
 // InfoF logs a formatted info message
 func (l *LogManagerWrapper) InfoF(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.InfoF(format, args...)
-	l.exporter.EmitLog(context.Background(), "INFO", message, nil)
+	l.emit(context.Background(), "INFO", message)
 }
 
 // WarnF logs a formatted warning message
 func (l *LogManagerWrapper) WarnF(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.WarnF(format, args...)
-	l.exporter.EmitLog(context.Background(), "WARN", message, nil)
+	l.emit(context.Background(), "WARN", message)
 }
 
 // ErrorF logs a formatted error message
 func (l *LogManagerWrapper) ErrorF(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.ErrorF(format, args...)
-	l.exporter.EmitLog(context.Background(), "ERROR", message, nil)
+	l.emit(context.Background(), "ERROR", message)
 }
 
 // DebugFCtx logs a formatted debug message with context
 func (l *LogManagerWrapper) DebugFCtx(ctx context.Context, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.DebugFCtx(ctx, format, args...)
-	l.exporter.EmitLog(ctx, "DEBUG", message, nil)
+	l.emit(ctx, "DEBUG", message)
 }
 
 // InfoFCtx logs a formatted info message with context
 func (l *LogManagerWrapper) InfoFCtx(ctx context.Context, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.InfoFCtx(ctx, format, args...)
-	l.exporter.EmitLog(ctx, "INFO", message, nil)
+	l.emit(ctx, "INFO", message)
 }
 
 // WarnFCtx logs a formatted warning message with context
 func (l *LogManagerWrapper) WarnFCtx(ctx context.Context, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.WarnFCtx(ctx, format, args...)
-	l.exporter.EmitLog(ctx, "WARN", message, nil)
+	l.emit(ctx, "WARN", message)
 }
 
 // ErrorFCtx logs a formatted error message with context
 func (l *LogManagerWrapper) ErrorFCtx(ctx context.Context, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	l.original.ErrorFCtx(ctx, format, args...)
-	l.exporter.EmitLog(ctx, "ERROR", message, nil)
+	l.emit(ctx, "ERROR", message)
 }
 
 // With adds fields to the logger
@@ -410,12 +493,18 @@ func (l *LogManagerWrapper) With(keyValues ...any) logger.LogManager {
 	return &LogManagerWrapper{
 		original: l.original.With(keyValues...),
 		exporter: l.exporter,
+		fields:   mergeFields(l.fields, keyValuesToFields(keyValues...)),
 	}
 }
 
 // Sync flushes buffered logs
 func (l *LogManagerWrapper) Sync() error {
-	return l.original.Sync()
+	var exportErr error
+	if l.exporter != nil {
+		exportErr = l.exporter.Flush(context.Background())
+	}
+
+	return errors.Join(exportErr, l.original.Sync())
 }
 
 // SetLogLevel sets the log level

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// Config key for Sentinel base URL (e.g. http://sentinel:4000/sentinel).
+	// Config key for Sentinel base URL (e.g. http://sentinel-nginx:4000/sentinel).
 	KeySentinelBaseURL = "SentinelServiceEndpoint"
 	// Config key for internal API auth (X-Internal-Key header).
 	KeyInternalAdminKey = "InternalAdminKey"

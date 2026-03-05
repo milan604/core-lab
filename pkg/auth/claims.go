@@ -17,6 +17,42 @@ func (c Claims) IsServiceToken() bool {
 	return strings.EqualFold(strings.TrimSpace(c.TokenUse), "service")
 }
 
+// TenantID returns the tenant_id from the token claims, if present.
+func (c Claims) TenantID() string {
+	if c.Raw == nil {
+		return ""
+	}
+
+	value, ok := c.Raw["tenant_id"]
+	if !ok {
+		return ""
+	}
+
+	tenantID, ok := value.(string)
+	if !ok {
+		return ""
+	}
+
+	return strings.TrimSpace(tenantID)
+}
+
+// TenantStatus returns the tenant_status from the token claims, if present.
+// Returns empty string if not set (platform-level user or legacy token without the claim).
+func (c Claims) TenantStatus() string {
+	if c.Raw == nil {
+		return ""
+	}
+	value, ok := c.Raw["tenant_status"]
+	if !ok {
+		return ""
+	}
+	status, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(status)
+}
+
 // HasPermission evaluates whether the caller holds the permission for the given service.
 // bitValue is a sequential position (0, 1, 2, 3, ...) that gets mapped to a range and position within that range.
 func (c Claims) HasPermission(service string, bitValue int64) bool {

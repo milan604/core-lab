@@ -75,40 +75,36 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 			return
 		}
 
-		// Service tokens bypass permission checks
-		if claims.IsServiceToken() {
-			c.Next()
-			return
-		}
-
 		// Get permission lookup from context to access permission store
 		// This avoids import cycles by using an interface
 		val, exists := c.Get(string(CtxMiddlewareServiceKey))
 		if !exists {
-			log.ErrorFCtx(c.Request.Context(), "Permission check failed: service not available in context", "permission", code)
+			log.ErrorFCtx(c.Request.Context(), "Permission check failed: service not available in context (permission=%s)", code)
 			a.abortWithJSON(c, http.StatusInternalServerError, "service_not_available", "service not available in context", log)
 			return
 		}
 		lookup, ok := val.(PermissionLookup)
 		if !ok {
-			log.ErrorFCtx(c.Request.Context(), "Permission check failed: service does not implement PermissionLookup", "permission", code)
+			log.ErrorFCtx(c.Request.Context(), "Permission check failed: service does not implement PermissionLookup (permission=%s)", code)
 			a.abortWithJSON(c, http.StatusInternalServerError, "service_invalid", "service does not implement PermissionLookup", log)
 			return
 		}
 		metadata, ok := lookup.LookupPermission(code)
 		if !ok {
-			log.WarnFCtx(c.Request.Context(), "Permission check failed: permission not registered in sentinel", "permission", code)
+			log.WarnFCtx(c.Request.Context(), "Permission check failed: permission not registered in sentinel (permission=%s)", code)
 			a.abortWithJSON(c, http.StatusForbidden, "permission_not_registered", "permission is not registered in sentinel", log)
 			return
 		}
 
 		// Check if caller has the required bitmask permission
 		if !claims.HasPermission(metadata.Service, metadata.BitValue) {
-			log.WarnFCtx(c.Request.Context(), "Permission check failed: caller lacks required permission",
-				"permission", code,
-				"service", metadata.Service,
-				"bit_value", metadata.BitValue,
-				"subject", claims.Subject,
+			log.WarnFCtx(
+				c.Request.Context(),
+				"Permission check failed: caller lacks required permission (permission=%s service=%s bit_value=%d subject=%s)",
+				code,
+				metadata.Service,
+				metadata.BitValue,
+				claims.Subject,
 			)
 			a.abortWithJSON(c, http.StatusForbidden, "permission_denied", "caller lacks required permission", log)
 			return
@@ -159,11 +155,7 @@ func (a *Authorizer) abortAuthError(c *gin.Context, err error, log logger.LogMan
 // abortWithJSON aborts the request with a JSON error response.
 func (a *Authorizer) abortWithJSON(c *gin.Context, status int, code, message string, log logger.LogManager) {
 	// Log the error with context for observability
-	log.ErrorFCtx(c.Request.Context(), "Request aborted: %s - %s", code, message,
-		"status", status,
-		"path", c.FullPath(),
-		"method", c.Request.Method,
-	)
+	log.ErrorFCtx(c.Request.Context(), "Request aborted: %s - %s (status=%d path=%s method=%s)", code, message, status, c.FullPath(), c.Request.Method)
 
 	c.AbortWithStatusJSON(status, gin.H{
 		"error":   code,

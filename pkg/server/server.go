@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
@@ -41,32 +43,42 @@ func NewEngine(opts ...EngineOption) *gin.Engine {
 	// 3. App Logger Injector
 	engine.Use(middleware.AppLoggerMiddleware(logMgr))
 
-	// 4. CORS (optional)
+	// 4. Security Headers (optional)
+	if opt.securityHeadersConfig.Enabled {
+		engine.Use(middleware.SecurityHeadersMiddleware(opt.securityHeadersConfig))
+	}
+
+	// 5. CORS (optional)
 	if opt.corsConfig.Enabled {
 		engine.Use(middleware.CORSMiddleware(opt.corsConfig))
 	}
 
-	// 5. Rate Limiting (optional)
+	// 6. Rate Limiting (optional)
 	if opt.rateLimitConfig != nil && opt.rateLimitConfig.Enabled {
 		engine.Use(opt.rateLimitConfig.Middleware())
 	}
 
-	// 6. Prometheus (optional)
+	// 7. Tenant Status Check (optional — blocks suspended/cancelled tenants)
+	if opt.tenantStatusConfig.Enabled {
+		engine.Use(middleware.TenantStatusMiddleware(opt.tenantStatusConfig))
+	}
+
+	// 8. Prometheus (optional)
 	if opt.prometheus {
 		prom := middleware.NewPrometheusCollector("/metrics")
 		engine.Use(prom.PrometheusMiddleware())
 		prom.RegisterMetricsEndpoint(engine)
 	}
 
-	// 7. Error Handler
+	// 9. Error Handler
 	engine.Use(middleware.ErrorHandlerMiddleware())
 
-	// 8. User-provided middlewares
+	// 10. User-provided middlewares
 	for _, m := range opt.addMiddleware {
 		engine.Use(m)
 	}
 
-	// 9. Recovery (optional, last)
+	// 11. Recovery (optional, last)
 	if opt.recovery {
 		engine.Use(middleware.RecoveryMiddleware(logMgr))
 	}
@@ -139,8 +151,30 @@ func startTLSServer(srv *http.Server, so *startOptions) {
 		log.Printf("TLS key file error: %v", err)
 		return
 	}
+
+	// mTLS: require and verify client certificates if CA file is provided
+	if so.tlsClientCAFile != "" {
+		caCert, err := os.ReadFile(so.tlsClientCAFile)
+		if err != nil {
+			log.Printf("mTLS CA file error: %v", err)
+			return
+		}
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(caCert) {
+			log.Print("mTLS: failed to parse CA certificate")
+			return
+		}
+		srv.TLSConfig = &tls.Config{
+			ClientCAs:  caPool,
+			ClientAuth: tls.RequireAndVerifyClientCert,
+			MinVersion: tls.VersionTLS12,
+		}
+		fmt.Println("Server started 🚀 (mTLS)")
+	} else {
+		fmt.Println("Server started 🚀 (TLS)")
+	}
+
 	logServiceInfo(srv.Addr, so.logger)
-	fmt.Println("Server started 🚀 (TLS)")
 	if err := srv.ListenAndServeTLS(so.tlsCertFile, so.tlsKeyFile); err != nil && err != http.ErrServerClosed {
 		if so.logger != nil {
 			so.logger.ErrorF("ListenAndServeTLS error: %v", err)

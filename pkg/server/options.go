@@ -25,7 +25,11 @@ type startOptions struct {
 	// TLS
 	tlsCertFile string
 	tlsKeyFile  string
-	addr        string
+
+	// mTLS — optional CA for verifying client certificates
+	tlsClientCAFile string
+
+	addr string
 }
 
 // StartWithConfig passes config to the server startup
@@ -56,17 +60,28 @@ func StartWithTLS(certFile, keyFile string) StartOption {
 	}
 }
 
+// StartWithMTLS enables mutual TLS. The server will require and verify
+// client certificates against the provided CA file. Must be used together
+// with StartWithTLS.
+func StartWithMTLS(clientCAFile string) StartOption {
+	return func(o *startOptions) {
+		o.tlsClientCAFile = clientCAFile
+	}
+}
+
 // NewEngine builds a gin engine with recommended middlewares and returns it.
 // Accepts options such as logger, custom middleware, recovery toggle, CORS config, metrics toggle.
 type EngineOption func(*engineOptions)
 
 type engineOptions struct {
-	logger          logger.LogManager
-	recovery        bool
-	corsConfig      middleware.CorsConfig
-	prometheus      bool
-	rateLimitConfig *middleware.RateLimitConfig
-	addMiddleware   []gin.HandlerFunc
+	logger                logger.LogManager
+	recovery              bool
+	corsConfig            middleware.CorsConfig
+	prometheus            bool
+	rateLimitConfig       *middleware.RateLimitConfig
+	securityHeadersConfig middleware.SecurityHeadersConfig
+	tenantStatusConfig    middleware.TenantStatusConfig
+	addMiddleware         []gin.HandlerFunc
 }
 
 // Enables rate limiting with custom parameters
@@ -96,6 +111,22 @@ func WithPrometheus(enabled bool) EngineOption {
 func WithValidator(vi *validator.Validator) EngineOption {
 	return func(e *engineOptions) {
 		e.addMiddleware = append(e.addMiddleware, middleware.ValidatorMiddleware(vi))
+	}
+}
+
+// WithSecurityHeaders enables standard security response headers.
+// Pass middleware.DefaultSecurityHeadersConfig() for safe defaults.
+func WithSecurityHeaders(cfg middleware.SecurityHeadersConfig) EngineOption {
+	return func(e *engineOptions) {
+		e.securityHeadersConfig = cfg
+	}
+}
+
+// WithTenantStatus enables the tenant suspension middleware.
+// Pass middleware.DefaultTenantStatusConfig() to block suspended/cancelled/inactive tenants.
+func WithTenantStatus(cfg middleware.TenantStatusConfig) EngineOption {
+	return func(e *engineOptions) {
+		e.tenantStatusConfig = cfg
 	}
 }
 

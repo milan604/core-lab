@@ -37,8 +37,9 @@ const (
 
 // Authorizer handles JWT-based authorization with bitmask permission checking.
 type Authorizer struct {
-	verifier *jwtVerifier
-	log      logger.LogManager
+	verifier                      *jwtVerifier
+	log                           logger.LogManager
+	bypassServiceTokenPermissions bool
 }
 
 // Config provides configuration for the authorizer.
@@ -52,9 +53,14 @@ func NewAuthorizer(cfg Config, log logger.LogManager) (*Authorizer, error) {
 	if err != nil {
 		return nil, err
 	}
+	bypassServiceTokenPermissions, err := parseBypassServiceTokenPermissions(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return &Authorizer{
-		verifier: verifier,
-		log:      log,
+		verifier:                      verifier,
+		log:                           log,
+		bypassServiceTokenPermissions: bypassServiceTokenPermissions,
 	}, nil
 }
 
@@ -72,6 +78,11 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 		if err != nil {
 			log.ErrorFCtx(c.Request.Context(), "Authentication failed: %v", err)
 			a.abortAuthError(c, err, log)
+			return
+		}
+
+		if a.bypassServiceTokenPermissions && claims.IsServiceToken() {
+			c.Next()
 			return
 		}
 
@@ -320,6 +331,18 @@ func authorizationErrorStatus(err error) int {
 	}
 	// Most auth errors are unauthorized
 	return http.StatusUnauthorized
+}
+
+func parseBypassServiceTokenPermissions(cfg Config) (bool, error) {
+	raw := strings.TrimSpace(cfg.GetString("BypassServiceTokenPermissions"))
+	if raw == "" {
+		return true, nil
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("jwt authorizer: parse BypassServiceTokenPermissions: %w", err)
+	}
+	return enabled, nil
 }
 
 func decodeServicePermissionsMultiRange(raw string) map[string][]int64 {

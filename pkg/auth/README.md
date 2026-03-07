@@ -61,6 +61,7 @@ The authorizer requires the following configuration keys:
 - `RSAPublicKey`: Base64-encoded RSA public key (required)
 - `SentinelTokenIssuer`: JWT issuer to validate (optional)
 - `SentinelTokenAudience`: Comma-separated list of audiences to validate (optional)
+- `BypassServiceTokenPermissions`: Whether verified `token_use=service` callers bypass route-level permission checks (optional, defaults to `true`)
 
 ## Usage
 
@@ -138,7 +139,13 @@ The permission code is used to:
 
 ## Service Tokens
 
-Service tokens (tokens with `token_use: "service"`) automatically bypass permission checks. This allows service-to-service communication without explicit permission grants.
+Service tokens (tokens with `token_use: "service"`) bypass route-level permission checks by default. This allows internal service-to-service communication without explicit permission grants once the JWT has been verified.
+
+If a service is internet-facing and should continue enforcing permission bitmasks even for service tokens, set:
+
+```env
+BypassServiceTokenPermissions=false
+```
 
 ## Migration to core-lab
 
@@ -167,4 +174,3 @@ The package defines the following context keys:
 - `CtxMiddlewareServiceKey`: Key for storing service in context
 
 These are exported as constants for use in middleware and handlers.
-

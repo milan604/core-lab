@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/milan604/core-lab/pkg/auth"
 	"github.com/milan604/core-lab/pkg/config"
 	httplib "github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
@@ -58,6 +59,12 @@ func TestSentinelMiddlewareUsesCachedDecisionWhenSentinelUnavailable(t *testing.
 	}()
 
 	engine := gin.New()
+	engine.Use(withVerifiedClaims(auth.Claims{
+		TokenUse: "access",
+		Raw: map[string]any{
+			"tenant_id": "tenant-1",
+		},
+	}))
 	engine.Use(SentinelMiddleware(cfg, logger.MustNewDefaultLogger()))
 	engine.GET("/protected", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
@@ -113,6 +120,12 @@ func TestSentinelMiddlewareFailsClosedWithoutCachedDecision(t *testing.T) {
 	}()
 
 	engine := gin.New()
+	engine.Use(withVerifiedClaims(auth.Claims{
+		TokenUse: "access",
+		Raw: map[string]any{
+			"tenant_id": "tenant-1",
+		},
+	}))
 	engine.Use(SentinelMiddleware(cfg, logger.MustNewDefaultLogger()))
 	engine.GET("/protected", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
@@ -139,5 +152,13 @@ func responseWithStatus(status int, body string) *http.Response {
 		StatusCode: status,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func withVerifiedClaims(claims auth.Claims) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(string(auth.CtxAuthClaims), claims)
+		c.Request = c.Request.WithContext(auth.ContextWithClaims(c.Request.Context(), claims))
+		c.Next()
 	}
 }

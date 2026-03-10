@@ -211,13 +211,39 @@ func SentinelMiddleware(cfg *config.Config, log logger.LogManager) gin.HandlerFu
 			return
 		}
 
-		token, err := auth.ExtractBearerToken(c.GetHeader("Authorization"))
-		if err != nil {
+		reqLog := log
+		if reqLog == nil {
+			reqLog = logger.GetLogger(c)
+		}
+
+		claims, ok := auth.GetClaims(c)
+		if !ok {
 			c.Next()
 			return
 		}
 
 		if runtimeCfg.ServiceID == "" {
+			c.Next()
+			return
+		}
+
+		if claims.IsServiceToken() {
+			c.Next()
+			return
+		}
+
+		if tokenUse := strings.TrimSpace(claims.TokenUse); tokenUse != "" && !strings.EqualFold(tokenUse, "access") {
+			c.Next()
+			return
+		}
+
+		if strings.TrimSpace(claims.TenantID()) == "" {
+			c.Next()
+			return
+		}
+
+		token, err := auth.ExtractBearerToken(c.GetHeader("Authorization"))
+		if err != nil {
 			c.Next()
 			return
 		}
@@ -229,8 +255,8 @@ func SentinelMiddleware(cfg *config.Config, log logger.LogManager) gin.HandlerFu
 			if cached, ok := cache.fallback(cacheKey, delta); ok {
 				ApplyHeaders(c, cached)
 				if cached.Allowed {
-					if log != nil {
-						log.WarnFCtx(c, "tenant quota check failed, using cached decision: %v", err)
+					if reqLog != nil {
+						reqLog.WarnFCtx(c, "tenant quota check failed, using cached decision: %v", err)
 					}
 					c.Next()
 					return
@@ -252,8 +278,8 @@ func SentinelMiddleware(cfg *config.Config, log logger.LogManager) gin.HandlerFu
 			}
 
 			if runtimeCfg.FailOpen {
-				if log != nil {
-					log.WarnFCtx(c, "tenant quota check failed, allowing request through: %v", err)
+				if reqLog != nil {
+					reqLog.WarnFCtx(c, "tenant quota check failed, allowing request through: %v", err)
 				}
 				c.Next()
 				return

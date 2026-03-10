@@ -3,6 +3,7 @@ package server
 import (
 	"time"
 
+	coreaudit "github.com/milan604/core-lab/pkg/audit"
 	"github.com/milan604/core-lab/pkg/config"
 	"github.com/milan604/core-lab/pkg/logger"
 	"github.com/milan604/core-lab/pkg/validator"
@@ -81,6 +82,7 @@ type engineOptions struct {
 	rateLimitConfig       *middleware.RateLimitConfig
 	securityHeadersConfig middleware.SecurityHeadersConfig
 	tenantStatusConfig    middleware.TenantStatusConfig
+	auditConfig           *coreaudit.MiddlewareConfig
 	addMiddleware         []gin.HandlerFunc
 }
 
@@ -127,6 +129,12 @@ func WithSecurityHeaders(cfg middleware.SecurityHeadersConfig) EngineOption {
 func WithTenantStatus(cfg middleware.TenantStatusConfig) EngineOption {
 	return func(e *engineOptions) {
 		e.tenantStatusConfig = cfg
+	}
+}
+
+func WithAudit(cfg coreaudit.MiddlewareConfig) EngineOption {
+	return func(e *engineOptions) {
+		e.auditConfig = &cfg
 	}
 }
 

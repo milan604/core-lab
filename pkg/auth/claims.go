@@ -19,38 +19,42 @@ func (c Claims) IsServiceToken() bool {
 
 // TenantID returns the tenant_id from the token claims, if present.
 func (c Claims) TenantID() string {
-	if c.Raw == nil {
-		return ""
-	}
-
-	value, ok := c.Raw["tenant_id"]
-	if !ok {
-		return ""
-	}
-
-	tenantID, ok := value.(string)
-	if !ok {
-		return ""
-	}
-
-	return strings.TrimSpace(tenantID)
+	return c.ClaimString("tenant_id")
 }
 
 // TenantStatus returns the tenant_status from the token claims, if present.
 // Returns empty string if not set (platform-level user or legacy token without the claim).
 func (c Claims) TenantStatus() string {
+	return c.ClaimString("tenant_status")
+}
+
+// TenantMembershipStatus returns the tenant_membership_status from the token claims, if present.
+func (c Claims) TenantMembershipStatus() string {
+	return c.ClaimString("tenant_membership_status")
+}
+
+// UserID returns the authenticated user identifier, preferring identity_id over sub.
+func (c Claims) UserID() string {
+	if userID := strings.TrimSpace(c.IdentityID); userID != "" {
+		return userID
+	}
+	return strings.TrimSpace(c.Subject)
+}
+
+// ClaimString returns a trimmed string claim from the raw claim set.
+func (c Claims) ClaimString(key string) string {
 	if c.Raw == nil {
 		return ""
 	}
-	value, ok := c.Raw["tenant_status"]
+	value, ok := c.Raw[key]
 	if !ok {
 		return ""
 	}
-	status, ok := value.(string)
+	stringValue, ok := value.(string)
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(status)
+	return strings.TrimSpace(stringValue)
 }
 
 // HasPermission evaluates whether the caller holds the permission for the given service.

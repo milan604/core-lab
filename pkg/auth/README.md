@@ -56,9 +56,13 @@ type PermissionLookup interface {
 
 ## Configuration
 
-The authorizer requires the following configuration keys:
+The authorizer accepts either Sentinel discovery/JWKS or a static PEM fallback:
 
-- `RSAPublicKey`: Base64-encoded RSA public key (required)
+- `SentinelServiceEndpoint`: Sentinel base URL. When set, the authorizer discovers `/.well-known/openid-configuration` and validates against the published JWKS.
+- `SentinelOIDCDiscoveryURL`: Optional explicit discovery URL override.
+- `SentinelJWKSURL`: Optional explicit JWKS URL override.
+- `SentinelJWKSCacheTTLSeconds`: Optional JWKS cache TTL in seconds (defaults to `300`).
+- `RSAPublicKey`: Optional static PEM fallback used when remote JWKS is unavailable during rollout or outages.
 - `SentinelTokenIssuer`: JWT issuer to validate (optional)
 - `SentinelTokenAudience`: Comma-separated list of audiences to validate (optional)
 - `BypassServiceTokenPermissions`: Whether verified `token_use=service` callers bypass route-level permission checks (optional, defaults to `true`)

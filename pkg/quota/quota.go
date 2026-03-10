@@ -84,7 +84,7 @@ func (e *Enforcer) Middleware() gin.HandlerFunc {
 		}
 
 		today := time.Now().UTC().Format("2006-01-02")
-		quotaName := "api_calls_per_day"
+		quotaName := DefaultMetricAPICallsPerDay
 
 		e.mu.Lock()
 		b := e.getOrCreateBucket(tenantID, today)
@@ -97,7 +97,7 @@ func (e *Enforcer) Middleware() gin.HandlerFunc {
 				c.Header("X-RateLimit-Limit", strconv.FormatFloat(limit, 'f', 0, 64))
 				c.Header("X-RateLimit-Remaining", "0")
 				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-					"error":   "quota_exceeded",
+					"error":   ReasonQuotaExceeded,
 					"message": "Tenant has exceeded the " + quotaName + " quota",
 					"limit":   limit,
 				})

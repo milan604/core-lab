@@ -45,15 +45,9 @@ func TenantStatusMiddleware(cfg TenantStatusConfig) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
-		claims, exists := c.Get("claims")
-		if !exists {
-			// No JWT claims yet (unauthenticated route) — let the auth middleware handle it.
-			c.Next()
-			return
-		}
-
-		authClaims, ok := claims.(*auth.Claims)
+		authClaims, ok := auth.GetClaims(c)
 		if !ok {
+			// No JWT claims yet (unauthenticated route) — let the auth middleware handle it.
 			c.Next()
 			return
 		}
@@ -73,7 +67,7 @@ func TenantStatusMiddleware(cfg TenantStatusConfig) gin.HandlerFunc {
 
 		if blocked[status] {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error":   "tenant_suspended",
+				"error":   "tenant_inactive",
 				"message": "Your tenant account is currently " + status + ". Please contact support.",
 			})
 			return

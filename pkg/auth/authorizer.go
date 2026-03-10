@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -74,11 +75,15 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 			log = a.log
 		}
 
-		claims, err := a.authenticate(c)
-		if err != nil {
-			log.ErrorFCtx(c.Request.Context(), "Authentication failed: %v", err)
-			a.abortAuthError(c, err, log)
-			return
+		claims, ok := GetClaims(c)
+		if !ok {
+			var err error
+			claims, err = a.authenticate(c)
+			if err != nil {
+				log.ErrorFCtx(c.Request.Context(), "Authentication failed: %v", err)
+				a.abortAuthError(c, err, log)
+				return
+			}
 		}
 
 		if a.bypassServiceTokenPermissions && claims.IsServiceToken() {
@@ -125,6 +130,30 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 	}
 }
 
+// RequireAuthenticated verifies the bearer token and stores claims in the request context.
+// It is intended for protected route groups that need claims before downstream middleware.
+func (a *Authorizer) RequireAuthenticated() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := GetClaims(c); ok {
+			c.Next()
+			return
+		}
+
+		log := logger.GetLogger(c)
+		if log == nil {
+			log = a.log
+		}
+
+		if _, err := a.authenticate(c); err != nil {
+			log.ErrorFCtx(c.Request.Context(), "Authentication failed: %v", err)
+			a.abortAuthError(c, err, log)
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // authenticate extracts and verifies the JWT token from the request.
 func (a *Authorizer) authenticate(c *gin.Context) (Claims, error) {
 	// Get logger from context if available, otherwise use stored logger
@@ -134,7 +163,7 @@ func (a *Authorizer) authenticate(c *gin.Context) (Claims, error) {
 	}
 
 	header := c.GetHeader("Authorization")
-	token, err := extractBearerToken(header)
+	token, err := ExtractBearerToken(header)
 	if err != nil {
 		log.ErrorFCtx(c.Request.Context(), "Failed to extract bearer token: %v", err)
 		return Claims{}, err
@@ -148,6 +177,11 @@ func (a *Authorizer) authenticate(c *gin.Context) (Claims, error) {
 
 	// Store claims in context for later use
 	c.Set(string(CtxAuthClaims), claims)
+	reqCtx := c.Request.Context()
+	if reqCtx == nil {
+		reqCtx = context.Background()
+	}
+	c.Request = c.Request.WithContext(ContextWithClaims(reqCtx, claims))
 	return claims, nil
 }
 
@@ -176,22 +210,28 @@ func (a *Authorizer) abortWithJSON(c *gin.Context, status int, code, message str
 
 // jwtVerifier handles JWT token verification.
 type jwtVerifier struct {
-	publicKey interface{}
+	staticKey interface{}
+	remote    *remoteKeyProvider
 	issuer    string
 	audiences []string
 }
 
 // newJWTVerifier creates a new JWT verifier from configuration.
 func newJWTVerifier(cfg Config) (*jwtVerifier, error) {
-	// Get RSA public key - config key should be provided by service
+	var staticKey interface{}
+
 	pubKey := strings.TrimSpace(cfg.GetString("RSAPublicKey"))
-	if pubKey == "" {
-		return nil, fmt.Errorf("jwt authorizer: RSAPublicKey not configured")
+	if pubKey != "" {
+		parsedKey, err := parsePublicKey(pubKey)
+		if err != nil {
+			return nil, fmt.Errorf("jwt authorizer: parse public key: %w", err)
+		}
+		staticKey = parsedKey
 	}
 
-	parsedKey, err := parsePublicKey(pubKey)
-	if err != nil {
-		return nil, fmt.Errorf("jwt authorizer: parse public key: %w", err)
+	remote := newRemoteKeyProvider(cfg)
+	if staticKey == nil && remote == nil {
+		return nil, fmt.Errorf("jwt authorizer: RSAPublicKey or SentinelServiceEndpoint must be configured")
 	}
 
 	// Issuer and audience are optional - use empty strings if not configured
@@ -199,7 +239,8 @@ func newJWTVerifier(cfg Config) (*jwtVerifier, error) {
 	aud := parseAudience(cfg.GetString("SentinelTokenAudience"))
 
 	return &jwtVerifier{
-		publicKey: parsedKey,
+		staticKey: staticKey,
+		remote:    remote,
 		issuer:    issuer,
 		audiences: aud,
 	}, nil
@@ -207,29 +248,61 @@ func newJWTVerifier(cfg Config) (*jwtVerifier, error) {
 
 // Verify validates and parses a JWT token string.
 func (v *jwtVerifier) Verify(tokenString string) (Claims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// Validate signing method matches the public key type
-		switch key := v.publicKey.(type) {
-		case *rsa.PublicKey:
-			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v (expected RSA)", token.Header["alg"])
-			}
-		case *ecdsa.PublicKey:
-			if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v (expected ECDSA)", token.Header["alg"])
-			}
-			// Validate curve matches the key
-			ecdsaMethod, ok := token.Method.(*jwt.SigningMethodECDSA)
-			if ok {
-				expectedCurve := getCurveForECDSAKey(key)
-				if ecdsaMethod.CurveBits != expectedCurve {
-					return nil, fmt.Errorf("ECDSA curve mismatch: token uses %d bits, key is %d bits", ecdsaMethod.CurveBits, expectedCurve)
-				}
-			}
-		default:
-			return nil, fmt.Errorf("unsupported public key type: %T", v.publicKey)
+	keys, err := v.lookupVerificationKeys(tokenString)
+	if err != nil {
+		return Claims{}, err
+	}
+
+	var lastErr error
+	for _, key := range keys {
+		claims, err := v.verifyWithKey(tokenString, key)
+		if err != nil {
+			lastErr = err
+			continue
 		}
-		return v.publicKey, nil
+		return claims, nil
+	}
+
+	if lastErr != nil {
+		return Claims{}, lastErr
+	}
+
+	return Claims{}, fmt.Errorf("failed to parse token: no verification keys available")
+}
+
+func (v *jwtVerifier) lookupVerificationKeys(tokenString string) ([]interface{}, error) {
+	parser := jwt.NewParser()
+	unverifiedToken, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token header: %w", err)
+	}
+
+	keys := make([]interface{}, 0, 4)
+	if v.remote != nil {
+		remoteKeys, err := v.remote.LookupKeys(unverifiedToken)
+		if err != nil && v.staticKey == nil {
+			return nil, fmt.Errorf("failed to resolve jwks verification key: %w", err)
+		}
+		keys = append(keys, remoteKeys...)
+	}
+
+	if v.staticKey != nil {
+		keys = append(keys, v.staticKey)
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no verification keys available")
+	}
+
+	return dedupeVerificationKeys(keys), nil
+}
+
+func (v *jwtVerifier) verifyWithKey(tokenString string, key interface{}) (Claims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if err := validateTokenMethodWithKey(token, key); err != nil {
+			return nil, err
+		}
+		return key, nil
 	})
 	if err != nil {
 		return Claims{}, fmt.Errorf("failed to parse token: %w", err)
@@ -240,44 +313,106 @@ func (v *jwtVerifier) Verify(tokenString string) (Claims, error) {
 		return Claims{}, fmt.Errorf("invalid token claims")
 	}
 
-	// Validate issuer if configured
-	if v.issuer != "" {
-		if iss, ok := claims["iss"].(string); !ok || iss != v.issuer {
-			return Claims{}, fmt.Errorf("invalid issuer")
-		}
+	if err := validateIssuerClaim(claims, v.issuer); err != nil {
+		return Claims{}, err
+	}
+	if err := validateAudienceClaim(claims, v.audiences); err != nil {
+		return Claims{}, err
 	}
 
-	// Validate audience if configured
-	if len(v.audiences) > 0 {
-		aud, ok := claims["aud"]
-		if !ok {
-			return Claims{}, fmt.Errorf("missing audience claim")
+	return mapClaimsToAuthClaims(claims), nil
+}
+
+func validateTokenMethodWithKey(token *jwt.Token, key interface{}) error {
+	switch typed := key.(type) {
+	case *rsa.PublicKey:
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return fmt.Errorf("unexpected signing method: %v (expected RSA)", token.Header["alg"])
 		}
-		audValid := false
-		switch a := aud.(type) {
-		case string:
-			for _, expected := range v.audiences {
-				if a == expected {
+	case *ecdsa.PublicKey:
+		ecdsaMethod, ok := token.Method.(*jwt.SigningMethodECDSA)
+		if !ok {
+			return fmt.Errorf("unexpected signing method: %v (expected ECDSA)", token.Header["alg"])
+		}
+		expectedCurve := getCurveForECDSAKey(typed)
+		if ecdsaMethod.CurveBits != expectedCurve {
+			return fmt.Errorf("ECDSA curve mismatch: token uses %d bits, key is %d bits", ecdsaMethod.CurveBits, expectedCurve)
+		}
+	default:
+		return fmt.Errorf("unsupported public key type: %T", key)
+	}
+
+	return nil
+}
+
+func validateIssuerClaim(claims jwt.MapClaims, issuer string) error {
+	if issuer == "" {
+		return nil
+	}
+
+	if iss, ok := claims["iss"].(string); !ok || iss != issuer {
+		return fmt.Errorf("invalid issuer")
+	}
+
+	return nil
+}
+
+func validateAudienceClaim(claims jwt.MapClaims, audiences []string) error {
+	if len(audiences) == 0 {
+		return nil
+	}
+
+	aud, ok := claims["aud"]
+	if !ok {
+		return fmt.Errorf("missing audience claim")
+	}
+
+	audValid := false
+	switch typed := aud.(type) {
+	case string:
+		for _, expected := range audiences {
+			if typed == expected {
+				audValid = true
+				break
+			}
+		}
+	case []interface{}:
+		for _, expected := range audiences {
+			for _, claimAud := range typed {
+				if claimAudStr, ok := claimAud.(string); ok && claimAudStr == expected {
 					audValid = true
 					break
 				}
 			}
-		case []interface{}:
-			for _, expected := range v.audiences {
-				for _, claimAud := range a {
-					if claimAudStr, ok := claimAud.(string); ok && claimAudStr == expected {
-						audValid = true
-						break
-					}
-				}
-			}
-		}
-		if !audValid {
-			return Claims{}, fmt.Errorf("invalid audience")
 		}
 	}
 
-	return mapClaimsToAuthClaims(claims), nil
+	if !audValid {
+		return fmt.Errorf("invalid audience")
+	}
+
+	return nil
+}
+
+func dedupeVerificationKeys(keys []interface{}) []interface{} {
+	out := make([]interface{}, 0, len(keys))
+	seen := make(map[string]struct{}, len(keys))
+
+	for _, key := range keys {
+		if key == nil {
+			continue
+		}
+
+		cacheKey := fmt.Sprintf("%T:%p", key, key)
+		if _, ok := seen[cacheKey]; ok {
+			continue
+		}
+
+		seen[cacheKey] = struct{}{}
+		out = append(out, key)
+	}
+
+	return out
 }
 
 // mapClaimsToAuthClaims converts jwt.MapClaims to our Claims struct.
@@ -308,7 +443,7 @@ func mapClaimsToAuthClaims(claims jwt.MapClaims) Claims {
 }
 
 // extractBearerToken extracts the bearer token from the Authorization header.
-func extractBearerToken(header string) (string, error) {
+func ExtractBearerToken(header string) (string, error) {
 	trimmed := strings.TrimSpace(header)
 	if trimmed == "" {
 		return "", errors.New("authorization header missing")
@@ -322,6 +457,10 @@ func extractBearerToken(header string) (string, error) {
 		return "", errors.New("authorization header must be a bearer token")
 	}
 	return token, nil
+}
+
+func extractBearerToken(header string) (string, error) {
+	return ExtractBearerToken(header)
 }
 
 // authorizationErrorStatus determines the HTTP status code for an authorization error.

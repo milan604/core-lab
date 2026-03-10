@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/milan604/core-lab/pkg/auth"
 	"github.com/milan604/core-lab/pkg/logger"
 )
 
@@ -27,6 +28,18 @@ func NewEvent(c *gin.Context, service, action, resource, resourceID, status stri
 	}
 	if uid, ok := c.Get("user_id"); ok {
 		ev.UserID, _ = uid.(string)
+	}
+	if claims, ok := auth.GetClaims(c); ok {
+		if ev.TenantID == "" {
+			ev.TenantID = claims.TenantID()
+		}
+		if !claims.IsServiceToken() && ev.UserID == "" {
+			if claims.IdentityID != "" {
+				ev.UserID = claims.IdentityID
+			} else {
+				ev.UserID = claims.Subject
+			}
+		}
 	}
 	if rid := c.Value(logger.RequestIDKey); rid != nil {
 		ev.RequestID, _ = rid.(string)

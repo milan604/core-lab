@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"time"
 
+	coreaudit "github.com/milan604/core-lab/pkg/audit"
 	"github.com/milan604/core-lab/pkg/config"
 	"github.com/milan604/core-lab/pkg/logger"
 	middleware "github.com/milan604/core-lab/pkg/server/middleware"
@@ -43,42 +44,47 @@ func NewEngine(opts ...EngineOption) *gin.Engine {
 	// 3. App Logger Injector
 	engine.Use(middleware.AppLoggerMiddleware(logMgr))
 
-	// 4. Security Headers (optional)
+	// 4. Request Audit (optional)
+	if opt.auditConfig != nil && opt.auditConfig.Enabled {
+		engine.Use(coreaudit.Middleware(*opt.auditConfig))
+	}
+
+	// 5. Security Headers (optional)
 	if opt.securityHeadersConfig.Enabled {
 		engine.Use(middleware.SecurityHeadersMiddleware(opt.securityHeadersConfig))
 	}
 
-	// 5. CORS (optional)
+	// 6. CORS (optional)
 	if opt.corsConfig.Enabled {
 		engine.Use(middleware.CORSMiddleware(opt.corsConfig))
 	}
 
-	// 6. Rate Limiting (optional)
+	// 7. Rate Limiting (optional)
 	if opt.rateLimitConfig != nil && opt.rateLimitConfig.Enabled {
 		engine.Use(opt.rateLimitConfig.Middleware())
 	}
 
-	// 7. Tenant Status Check (optional — blocks suspended/cancelled tenants)
+	// 8. Tenant Status Check (optional — blocks suspended/cancelled tenants)
 	if opt.tenantStatusConfig.Enabled {
 		engine.Use(middleware.TenantStatusMiddleware(opt.tenantStatusConfig))
 	}
 
-	// 8. Prometheus (optional)
+	// 9. Prometheus (optional)
 	if opt.prometheus {
 		prom := middleware.NewPrometheusCollector("/metrics")
 		engine.Use(prom.PrometheusMiddleware())
 		prom.RegisterMetricsEndpoint(engine)
 	}
 
-	// 9. Error Handler
+	// 10. Error Handler
 	engine.Use(middleware.ErrorHandlerMiddleware())
 
-	// 10. User-provided middlewares
+	// 11. User-provided middlewares
 	for _, m := range opt.addMiddleware {
 		engine.Use(m)
 	}
 
-	// 11. Recovery (optional, last)
+	// 12. Recovery (optional, last)
 	if opt.recovery {
 		engine.Use(middleware.RecoveryMiddleware(logMgr))
 	}

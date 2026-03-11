@@ -124,7 +124,7 @@ func NewSentinelClient(log logger.LogManager, cfg *config.Config) *SentinelClien
 		httpClient:  httplib.NewClient(httplib.WithLogger(log)),
 		cfg:         cfg,
 		baseURL:     httplib.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint")),
-		internalKey: strings.TrimSpace(cfg.GetString("SentinelServiceAPIKey")),
+		internalKey: httplib.InternalAuthKey(cfg),
 	}
 }
 
@@ -136,7 +136,7 @@ func (c *SentinelClient) CheckTenantQuota(ctx context.Context, token, serviceID,
 		return CheckResponse{}, fmt.Errorf("SentinelServiceEndpoint not configured")
 	}
 	if strings.TrimSpace(c.internalKey) == "" {
-		return CheckResponse{}, fmt.Errorf("SentinelServiceAPIKey not configured")
+		return CheckResponse{}, fmt.Errorf("internal auth key not configured")
 	}
 
 	payload := CheckRequest{

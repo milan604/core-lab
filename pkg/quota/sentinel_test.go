@@ -22,6 +22,7 @@ func TestSentinelMiddlewareUsesCachedDecisionWhenSentinelUnavailable(t *testing.
 
 	cfg := config.New(config.WithDefaults(map[string]any{
 		"SentinelServiceEndpoint": "http://sentinel.test",
+		"InternalAdminKey":        "platform-internal",
 		"SentinelServiceAPIKey":   "internal-key",
 		"SentinelServiceID":       "sites",
 		"QuotaFailOpen":           false,
@@ -99,6 +100,7 @@ func TestSentinelMiddlewareFailsClosedWithoutCachedDecision(t *testing.T) {
 
 	cfg := config.New(config.WithDefaults(map[string]any{
 		"SentinelServiceEndpoint": "http://sentinel.test",
+		"InternalAdminKey":        "platform-internal",
 		"SentinelServiceAPIKey":   "internal-key",
 		"SentinelServiceID":       "sites",
 		"QuotaFailOpen":           false,

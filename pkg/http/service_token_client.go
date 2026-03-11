@@ -1,8 +1,11 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,22 +16,24 @@ import (
 // ServiceTokenProvider implements TokenProvider for service token authentication.
 // It calls a service token API to fetch tokens for service-to-service communication.
 type ServiceTokenProvider struct {
-	ServiceURL string
-	ServiceID  string
-	APIKey     string
-	Scope      string
-	Audience   []string
-	HTTPClient HTTPClient
+	ServiceURL  string
+	ServiceID   string
+	APIKey      string
+	InternalKey string
+	Scope       string
+	Audience    []string
+	HTTPClient  HTTPClient
 }
 
 // ServiceTokenProviderConfig holds configuration for ServiceTokenProvider.
 type ServiceTokenProviderConfig struct {
-	ServiceURL string
-	ServiceID  string
-	APIKey     string
-	Scope      string
-	Audience   []string
-	HTTPClient HTTPClient
+	ServiceURL  string
+	ServiceID   string
+	APIKey      string
+	InternalKey string
+	Scope       string
+	Audience    []string
+	HTTPClient  HTTPClient
 }
 
 // NewServiceTokenProvider creates a new service token provider.
@@ -44,12 +49,13 @@ func NewServiceTokenProvider(cfg ServiceTokenProviderConfig) *ServiceTokenProvid
 	}
 
 	return &ServiceTokenProvider{
-		ServiceURL: cfg.ServiceURL,
-		ServiceID:  cfg.ServiceID,
-		APIKey:     cfg.APIKey,
-		Scope:      cfg.Scope,
-		Audience:   cfg.Audience,
-		HTTPClient: httpClient,
+		ServiceURL:  cfg.ServiceURL,
+		ServiceID:   cfg.ServiceID,
+		APIKey:      cfg.APIKey,
+		InternalKey: strings.TrimSpace(cfg.InternalKey),
+		Scope:       cfg.Scope,
+		Audience:    cfg.Audience,
+		HTTPClient:  httpClient,
 	}
 }
 
@@ -63,6 +69,9 @@ func (p *ServiceTokenProvider) FetchToken(ctx context.Context) (string, time.Tim
 	}
 	if p.APIKey == "" {
 		return "", time.Time{}, fmt.Errorf("API key is required")
+	}
+	if p.InternalKey == "" {
+		return "", time.Time{}, fmt.Errorf("internal admin key is required")
 	}
 
 	req := map[string]any{
@@ -86,7 +95,19 @@ func (p *ServiceTokenProvider) FetchToken(ctx context.Context) (string, time.Tim
 	}
 
 	url := fmt.Sprintf("%s/internal/api/v1/service-token", p.ServiceURL)
-	if err := p.HTTPClient.PostJSON(ctx, url, req, &resp); err != nil {
+	bodyBytes, err := json.Marshal(req)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to marshal service token request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to create service token request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Internal-Key", p.InternalKey)
+
+	if err := p.HTTPClient.DoJSON(ctx, httpReq, &resp); err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to call service token API: %w", err)
 	}
 
@@ -123,6 +144,7 @@ func (p *ServiceTokenProvider) parseExpirationTime(expiresAtStr string, expiresI
 // - SentinelServiceEndpoint: URL of the sentinel service
 // - SentinelServiceID: Service ID for authentication
 // - SentinelServiceAPIKey: API key for authentication
+// - InternalAdminKey: internal key required by Sentinel control-plane APIs
 func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config not configured")
@@ -132,6 +154,7 @@ func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Clie
 	sentinelServiceURL := NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
 	serviceID := cfg.GetString("SentinelServiceID")
 	apiKey := cfg.GetString("SentinelServiceAPIKey")
+	internalKey := strings.TrimSpace(cfg.GetString("InternalAdminKey"))
 	tokenScope := strings.TrimSpace(cfg.GetString("SentinelServiceTokenScope"))
 	tokenAudience := parseAudienceList(cfg.GetStringSlice("SentinelTokenAudience"))
 	if len(tokenAudience) == 0 {
@@ -139,7 +162,7 @@ func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Clie
 	}
 
 	// Validate configuration
-	if err := cfg.ValidateRequired("SentinelServiceEndpoint", "SentinelServiceID", "SentinelServiceAPIKey"); err != nil {
+	if err := cfg.ValidateRequired("SentinelServiceEndpoint", "SentinelServiceID", "SentinelServiceAPIKey", "InternalAdminKey"); err != nil {
 		return nil, fmt.Errorf("service token configuration: %w", err)
 	}
 
@@ -149,12 +172,13 @@ func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Clie
 
 	// Create service token provider
 	tokenProvider := NewServiceTokenProvider(ServiceTokenProviderConfig{
-		ServiceURL: sentinelServiceURL,
-		ServiceID:  serviceID,
-		APIKey:     apiKey,
-		Scope:      tokenScope,
-		Audience:   tokenAudience,
-		HTTPClient: baseClient,
+		ServiceURL:  sentinelServiceURL,
+		ServiceID:   serviceID,
+		APIKey:      apiKey,
+		InternalKey: internalKey,
+		Scope:       tokenScope,
+		Audience:    tokenAudience,
+		HTTPClient:  baseClient,
 	})
 
 	// Create HTTP client with token provider configured

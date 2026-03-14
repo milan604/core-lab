@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/controlplane"
 	"github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
 )
@@ -37,10 +38,9 @@ func Bootstrap(ctx context.Context, catalog *Catalog, cfg *config.Config, log lo
 		return fmt.Errorf("permission catalog not configured")
 	}
 
-	// Get sentinel service URL from config
-	sentinelURL := http.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
-	if sentinelURL == "" {
-		return fmt.Errorf("SentinelServiceEndpoint not configured")
+	api := controlplane.APIFromConfig(cfg)
+	if !api.Valid() {
+		return fmt.Errorf("%s or %s not configured", controlplane.KeyBaseURL, controlplane.LegacyKeyBaseURL)
 	}
 
 	// Create HTTP client with token provider using http package directly
@@ -50,13 +50,13 @@ func Bootstrap(ctx context.Context, catalog *Catalog, cfg *config.Config, log lo
 	}
 
 	// Ensure permissions are created in sentinel service
-	if err := ensurePermissions(ctx, catalog, sentinelURL, httpClient); err != nil {
+	if err := ensurePermissions(ctx, catalog, api, httpClient); err != nil {
 		return fmt.Errorf("failed to ensure permissions: %w", err)
 	}
 
 	// Load permissions from sentinel service into the permission store
 	if store != nil {
-		if err := loadPermissions(ctx, sentinelURL, httpClient, store); err != nil {
+		if err := loadPermissions(ctx, api, httpClient, store); err != nil {
 			return fmt.Errorf("failed to load permissions: %w", err)
 		}
 	}
@@ -66,7 +66,7 @@ func Bootstrap(ctx context.Context, catalog *Catalog, cfg *config.Config, log lo
 
 // ensurePermissions creates permissions in the sentinel service if they don't exist.
 // Makes HTTP call directly to the sentinel service.
-func ensurePermissions(ctx context.Context, catalog *Catalog, sentinelURL string, httpClient HTTPClient) error {
+func ensurePermissions(ctx context.Context, catalog *Catalog, api controlplane.API, httpClient HTTPClient) error {
 	// Prepare bulk create request
 	requests := make([]StandardCreateRequest, 0, catalog.Count())
 	for _, def := range catalog.All() {
@@ -84,12 +84,11 @@ func ensurePermissions(ctx context.Context, catalog *Catalog, sentinelURL string
 	}
 
 	// Make HTTP call directly to sentinel service
-	url := fmt.Sprintf("%s/api/v1/permissions/bulk", sentinelURL)
 	var response struct {
 		Permissions []StandardCreateResponseEntry `json:"permissions"`
 	}
 
-	err := httpClient.PostJSON(ctx, url, requestBody, &response)
+	err := httpClient.PostJSON(ctx, api.PermissionBulkURL(), requestBody, &response)
 	if err != nil {
 		return fmt.Errorf("failed to create permissions in sentinel service: %w", err)
 	}
@@ -99,12 +98,10 @@ func ensurePermissions(ctx context.Context, catalog *Catalog, sentinelURL string
 
 // loadPermissions loads permissions from the sentinel service into the store.
 // Makes HTTP call directly to the sentinel service.
-func loadPermissions(ctx context.Context, sentinelURL string, httpClient HTTPClient, store *Store) error {
-	// Make HTTP call directly to sentinel service
-	url := fmt.Sprintf("%s/api/v1/permissions/bitmask", sentinelURL)
+func loadPermissions(ctx context.Context, api controlplane.API, httpClient HTTPClient, store *Store) error {
 	var catalogResponse StandardCatalogResponse
 
-	err := httpClient.GetJSON(ctx, url, &catalogResponse)
+	err := httpClient.GetJSON(ctx, api.PermissionCatalogURL(), &catalogResponse)
 	if err != nil {
 		return fmt.Errorf("failed to fetch permission catalog: %w", err)
 	}

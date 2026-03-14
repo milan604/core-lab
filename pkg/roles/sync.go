@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/controlplane"
 	"github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
 	"github.com/milan604/core-lab/pkg/permissions"
@@ -47,9 +48,9 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 	log.InfoFCtx(ctx, "Verified %d role definitions", len(validatedRoles))
 
 	// Step 2: Create HTTP client for Sentinel service (similar to permissions package)
-	sentinelURL := http.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
-	if sentinelURL == "" {
-		return fmt.Errorf("SentinelServiceEndpoint not configured")
+	api := controlplane.APIFromConfig(cfg)
+	if !api.Valid() {
+		return fmt.Errorf("%s or %s not configured", controlplane.KeyBaseURL, controlplane.LegacyKeyBaseURL)
 	}
 
 	// Create HTTP client with service token authentication (similar to permissions package)
@@ -66,7 +67,7 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 		roleIDs = append(roleIDs, roleDef.RoleID)
 	}
 
-	if err := validateRoleIDs(ctx, roleIDs, sentinelURL, httpClient, log); err != nil {
+	if err := validateRoleIDs(ctx, roleIDs, api, httpClient, log); err != nil {
 		log.ErrorFCtx(ctx, "Failed to validate roles in Sentinel: %v", err)
 		return fmt.Errorf("failed to validate roles: %w", err)
 	}
@@ -75,7 +76,7 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 
 	// Assign permissions to roles
 	for _, roleDef := range validatedRoles {
-		if err := assignPermissionsToRole(ctx, roleDef.RoleID, roleDef.Permissions, sentinelURL, httpClient, log); err != nil {
+		if err := assignPermissionsToRole(ctx, roleDef.RoleID, roleDef.Permissions, api, httpClient, log); err != nil {
 			log.ErrorFCtx(ctx, "Failed to assign permissions to role %s in Sentinel: %v", roleDef.RoleID, err)
 			return fmt.Errorf("failed to assign permissions to role %s: %w", roleDef.RoleID, err)
 		}
@@ -87,7 +88,7 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 }
 
 // validateRoleIDs validates that role IDs exist in Sentinel using bulk API
-func validateRoleIDs(ctx context.Context, roleIDs []string, sentinelURL string, httpClient *http.Client, log logger.LogManager) error {
+func validateRoleIDs(ctx context.Context, roleIDs []string, api controlplane.API, httpClient *http.Client, log logger.LogManager) error {
 	if len(roleIDs) == 0 {
 		return nil
 	}
@@ -113,9 +114,7 @@ func validateRoleIDs(ctx context.Context, roleIDs []string, sentinelURL string, 
 	}
 
 	var response GetRolesByIDsResponse
-	url := sentinelURL + "/api/v1/roles/bulk"
-
-	if err := httpClient.PostJSON(ctx, url, request, &response); err != nil {
+	if err := httpClient.PostJSON(ctx, api.RolesBulkURL(), request, &response); err != nil {
 		log.ErrorFCtx(ctx, "Failed to get roles from Sentinel: %v", err)
 		return fmt.Errorf("sentinel service get roles: %w", err)
 	}
@@ -142,7 +141,7 @@ func validateRoleIDs(ctx context.Context, roleIDs []string, sentinelURL string, 
 }
 
 // getPermissionsByCode gets permission IDs from Sentinel using permission codes
-func getPermissionsByCode(ctx context.Context, codes []string, sentinelURL string, httpClient *http.Client, log logger.LogManager) ([]string, error) {
+func getPermissionsByCode(ctx context.Context, codes []string, api controlplane.API, httpClient *http.Client, log logger.LogManager) ([]string, error) {
 	if len(codes) == 0 {
 		return []string{}, nil
 	}
@@ -165,9 +164,7 @@ func getPermissionsByCode(ctx context.Context, codes []string, sentinelURL strin
 	}
 
 	var response GetPermissionsByCodesResponse
-	url := sentinelURL + "/api/v1/permissions/by-codes"
-
-	if err := httpClient.PostJSON(ctx, url, request, &response); err != nil {
+	if err := httpClient.PostJSON(ctx, api.PermissionByCodesURL(), request, &response); err != nil {
 		log.ErrorFCtx(ctx, "Failed to get permissions from Sentinel: %v", err)
 		return nil, fmt.Errorf("sentinel service get permissions: %w", err)
 	}
@@ -183,7 +180,7 @@ func getPermissionsByCode(ctx context.Context, codes []string, sentinelURL strin
 }
 
 // assignPermissionsToRole assigns permissions to a role in Sentinel
-func assignPermissionsToRole(ctx context.Context, roleID string, permissionRefs []permissions.Reference, sentinelURL string, httpClient *http.Client, log logger.LogManager) error {
+func assignPermissionsToRole(ctx context.Context, roleID string, permissionRefs []permissions.Reference, api controlplane.API, httpClient *http.Client, log logger.LogManager) error {
 	if len(permissionRefs) == 0 {
 		log.InfoFCtx(ctx, "No permissions to assign to role %s", roleID)
 		return nil
@@ -197,7 +194,7 @@ func assignPermissionsToRole(ctx context.Context, roleID string, permissionRefs 
 	}
 
 	// Get permission IDs from codes
-	permissionIDs, err := getPermissionsByCode(ctx, codes, sentinelURL, httpClient, log)
+	permissionIDs, err := getPermissionsByCode(ctx, codes, api, httpClient, log)
 	if err != nil {
 		return fmt.Errorf("failed to get permissions by code: %w", err)
 	}
@@ -222,9 +219,7 @@ func assignPermissionsToRole(ctx context.Context, roleID string, permissionRefs 
 	}
 
 	var response []AssignPermissionsToRoleResponse
-	url := sentinelURL + "/api/v1/roles/" + roleID + "/permissions"
-
-	if err := httpClient.PostJSON(ctx, url, request, &response); err != nil {
+	if err := httpClient.PostJSON(ctx, api.RolePermissionsURL(roleID), request, &response); err != nil {
 		log.ErrorFCtx(ctx, "Failed to assign permissions to role %s: %v", roleID, err)
 		return fmt.Errorf("failed to assign permissions to role: %w", err)
 	}

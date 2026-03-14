@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	corehttp "github.com/milan604/core-lab/pkg/http"
+	"github.com/milan604/core-lab/pkg/controlplane"
 )
 
 const (
@@ -66,14 +66,14 @@ func newRemoteKeyProvider(cfg Config) *remoteKeyProvider {
 		return nil
 	}
 
-	explicitJWKSURL := strings.TrimSpace(cfg.GetString("SentinelJWKSURL"))
-	discoveryURL := strings.TrimSpace(cfg.GetString("SentinelOIDCDiscoveryURL"))
+	explicitJWKSURL := controlplane.ResolveJWKSURL(cfg)
+	discoveryURL := controlplane.ResolveOIDCDiscoveryURL(cfg)
 	fallbackJWKSURL := ""
 
 	if discoveryURL == "" {
-		if baseURL := corehttp.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint")); baseURL != "" {
-			discoveryURL = baseURL + "/.well-known/openid-configuration"
-			fallbackJWKSURL = baseURL + "/.well-known/jwks.json"
+		if api := controlplane.APIFromConfig(cfg); api.Valid() {
+			discoveryURL = api.OIDCDiscoveryURL()
+			fallbackJWKSURL = api.JWKSURL()
 		}
 	}
 
@@ -81,7 +81,7 @@ func newRemoteKeyProvider(cfg Config) *remoteKeyProvider {
 		return nil
 	}
 
-	cacheTTL := time.Duration(parseIntStringDefault(cfg.GetString("SentinelJWKSCacheTTLSeconds"), int(defaultJWKSCacheTTL/time.Second))) * time.Second
+	cacheTTL := controlplane.ResolveJWKSCacheTTL(cfg, defaultJWKSCacheTTL)
 	if cacheTTL <= 0 {
 		cacheTTL = defaultJWKSCacheTTL
 	}

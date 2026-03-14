@@ -10,30 +10,29 @@ import (
 	"time"
 
 	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/controlplane"
 	"github.com/milan604/core-lab/pkg/logger"
 )
 
 // ServiceTokenProvider implements TokenProvider for service token authentication.
 // It calls a service token API to fetch tokens for service-to-service communication.
 type ServiceTokenProvider struct {
-	ServiceURL  string
-	ServiceID   string
-	APIKey      string
-	InternalKey string
-	Scope       string
-	Audience    []string
-	HTTPClient  HTTPClient
+	ServiceURL string
+	ServiceID  string
+	APIKey     string
+	Scope      string
+	Audience   []string
+	HTTPClient HTTPClient
 }
 
 // ServiceTokenProviderConfig holds configuration for ServiceTokenProvider.
 type ServiceTokenProviderConfig struct {
-	ServiceURL  string
-	ServiceID   string
-	APIKey      string
-	InternalKey string
-	Scope       string
-	Audience    []string
-	HTTPClient  HTTPClient
+	ServiceURL string
+	ServiceID  string
+	APIKey     string
+	Scope      string
+	Audience   []string
+	HTTPClient HTTPClient
 }
 
 // NewServiceTokenProvider creates a new service token provider.
@@ -49,13 +48,12 @@ func NewServiceTokenProvider(cfg ServiceTokenProviderConfig) *ServiceTokenProvid
 	}
 
 	return &ServiceTokenProvider{
-		ServiceURL:  cfg.ServiceURL,
-		ServiceID:   cfg.ServiceID,
-		APIKey:      cfg.APIKey,
-		InternalKey: strings.TrimSpace(cfg.InternalKey),
-		Scope:       cfg.Scope,
-		Audience:    cfg.Audience,
-		HTTPClient:  httpClient,
+		ServiceURL: cfg.ServiceURL,
+		ServiceID:  cfg.ServiceID,
+		APIKey:     cfg.APIKey,
+		Scope:      cfg.Scope,
+		Audience:   cfg.Audience,
+		HTTPClient: httpClient,
 	}
 }
 
@@ -70,10 +68,6 @@ func (p *ServiceTokenProvider) FetchToken(ctx context.Context) (string, time.Tim
 	if p.APIKey == "" {
 		return "", time.Time{}, fmt.Errorf("API key is required")
 	}
-	if p.InternalKey == "" {
-		return "", time.Time{}, fmt.Errorf("internal admin key is required")
-	}
-
 	req := map[string]any{
 		"service_id": p.ServiceID,
 		"api_key":    p.APIKey,
@@ -105,7 +99,6 @@ func (p *ServiceTokenProvider) FetchToken(ctx context.Context) (string, time.Tim
 		return "", time.Time{}, fmt.Errorf("failed to create service token request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Internal-Key", p.InternalKey)
 
 	if err := p.HTTPClient.DoJSON(ctx, httpReq, &resp); err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to call service token API: %w", err)
@@ -141,44 +134,46 @@ func (p *ServiceTokenProvider) parseExpirationTime(expiresAtStr string, expiresI
 // This function handles service token fetching internally - services don't need to call the API themselves.
 //
 // Services need to pass config with:
-// - SentinelServiceEndpoint: URL of the sentinel service
-// - SentinelServiceID: Service ID for authentication
-// - SentinelServiceAPIKey: API key for authentication
-// - InternalAdminKey: internal key required by Sentinel control-plane APIs
+// - PlatformControlPlaneEndpoint or SentinelServiceEndpoint
+// - PlatformServiceID
+// - PlatformServiceAPIKey
+// - PlatformMTLSCertFile / PlatformMTLSKeyFile / PlatformMTLSCAFile
 func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Client, error) {
+	return NewClientWithServiceTokenForAudience(log, cfg, nil)
+}
+
+// NewClientWithServiceTokenForAudience creates a token-authenticated HTTP client
+// and optionally overrides the requested token audience.
+func NewClientWithServiceTokenForAudience(log logger.LogManager, cfg *config.Config, audience []string) (*Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config not configured")
 	}
 
-	// Get configuration
-	sentinelServiceURL := NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
-	serviceID := cfg.GetString("SentinelServiceID")
-	apiKey := cfg.GetString("SentinelServiceAPIKey")
-	internalKey := strings.TrimSpace(cfg.GetString("InternalAdminKey"))
-	tokenScope := strings.TrimSpace(cfg.GetString("SentinelServiceTokenScope"))
-	tokenAudience := parseAudienceList(cfg.GetStringSlice("SentinelTokenAudience"))
-	if len(tokenAudience) == 0 {
-		tokenAudience = parseAudience(cfg.GetString("SentinelTokenAudience"))
+	settings := controlplane.ResolveServiceTokenConfig(cfg)
+	if missing := settings.MissingRequiredFields(); len(missing) > 0 {
+		return nil, fmt.Errorf("service token configuration missing required keys: %s", strings.Join(missing, ", "))
+	}
+	if len(audience) > 0 {
+		settings.Audience = audience
 	}
 
-	// Validate configuration
-	if err := cfg.ValidateRequired("SentinelServiceEndpoint", "SentinelServiceID", "SentinelServiceAPIKey", "InternalAdminKey"); err != nil {
-		return nil, fmt.Errorf("service token configuration: %w", err)
+	mtlsOpts, err := controlPlaneMTLSOptions(log, settings.MTLS)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create base HTTP client for calling service token API
 	// This client doesn't need token provider - it's used to get the token
-	baseClient := NewClient(WithLogger(log))
+	baseClient := NewClient(mtlsOpts...)
 
 	// Create service token provider
 	tokenProvider := NewServiceTokenProvider(ServiceTokenProviderConfig{
-		ServiceURL:  sentinelServiceURL,
-		ServiceID:   serviceID,
-		APIKey:      apiKey,
-		InternalKey: internalKey,
-		Scope:       tokenScope,
-		Audience:    tokenAudience,
-		HTTPClient:  baseClient,
+		ServiceURL: settings.BaseURL,
+		ServiceID:  settings.ServiceID,
+		APIKey:     settings.APIKey,
+		Scope:      settings.Scope,
+		Audience:   settings.Audience,
+		HTTPClient: baseClient,
 	})
 
 	// Create HTTP client with token provider configured
@@ -188,39 +183,52 @@ func NewClientWithServiceToken(log logger.LogManager, cfg *config.Config) (*Clie
 	), nil
 }
 
-func parseAudience(audStr string) []string {
-	if strings.TrimSpace(audStr) == "" {
-		return nil
-	}
-
-	parts := strings.Split(audStr, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+// NewInternalControlPlaneClient creates a token-authenticated client scoped to
+// privileged control-plane APIs via the configured internal audience.
+func NewInternalControlPlaneClient(log logger.LogManager, cfg *config.Config) (*Client, error) {
+	return NewInternalControlPlaneClientForAudience(log, cfg, controlplane.ResolveInternalAudience(cfg))
 }
 
-func parseAudienceList(values []string) []string {
-	if len(values) == 0 {
-		return nil
+func NewInternalControlPlaneClientForAudience(log logger.LogManager, cfg *config.Config, audience []string) (*Client, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config not configured")
 	}
 
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			out = append(out, value)
-		}
+	settings := controlplane.ResolveServiceTokenConfig(cfg)
+	if missing := settings.MissingRequiredFields(); len(missing) > 0 {
+		return nil, fmt.Errorf("service token configuration missing required keys: %s", strings.Join(missing, ", "))
 	}
-	if len(out) == 0 {
-		return nil
+	if len(audience) > 0 {
+		settings.Audience = audience
 	}
-	return out
+
+	mtlsOpts, err := controlPlaneMTLSOptions(log, settings.MTLS)
+	if err != nil {
+		return nil, err
+	}
+
+	baseClient := NewClient(mtlsOpts...)
+	tokenProvider := NewServiceTokenProvider(ServiceTokenProviderConfig{
+		ServiceURL: settings.BaseURL,
+		ServiceID:  settings.ServiceID,
+		APIKey:     settings.APIKey,
+		Scope:      settings.Scope,
+		Audience:   settings.Audience,
+		HTTPClient: baseClient,
+	})
+
+	clientOpts := append([]ClientOption{}, mtlsOpts...)
+	clientOpts = append(clientOpts, WithTokenProvider(tokenProvider, 1*time.Minute))
+	return NewClient(clientOpts...), nil
+}
+
+func controlPlaneMTLSOptions(log logger.LogManager, mtls controlplane.MTLSConfig) ([]ClientOption, error) {
+	if missing := mtls.MissingRequiredFields(); len(missing) > 0 {
+		return nil, fmt.Errorf("control-plane mTLS configuration missing required keys: %s", strings.Join(missing, ", "))
+	}
+
+	return []ClientOption{
+		WithLogger(log),
+		WithMTLS(mtls.CertFile, mtls.KeyFile, mtls.CAFile),
+	}, nil
 }

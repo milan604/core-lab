@@ -105,3 +105,52 @@ func TestTenantAccessMiddlewareEnforcesTenantAppScope(t *testing.T) {
 		t.Fatalf("platform status = %d, want %d; body=%s", platformRecorder.Code, http.StatusForbidden, platformRecorder.Body.String())
 	}
 }
+
+func TestTenantAccessMiddlewareSeedsResolvedUserContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	privateKey, publicKeyPEM := testKeyPair(t)
+	authorizer := testAuthorizer(t, stubConfig{
+		"RSAPublicKey": publicKeyPEM,
+	})
+
+	router := gin.New()
+	scoped := router.Group(
+		"/scoped",
+		authorizer.RequireAuthenticated(),
+		TenantAccessMiddleware(DefaultTenantAccessConfig().WithTenantQueryParam("tenant_id").WithUserQueryParam("user_id")),
+	)
+	scoped.GET("", func(c *gin.Context) {
+		if tenantID, ok := GetTenantID(c); !ok || tenantID != "tenant-123" {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		if userID, ok := GetUserID(c); !ok || userID != "identity-123" {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		if userID, ok := UserIDFromContext(c.Request.Context()); !ok || userID != "identity-123" {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+
+	token := signTestToken(t, privateKey, jwt.MapClaims{
+		"sub":                      "user-123",
+		"identity_id":              "identity-123",
+		"tenant_id":                "tenant-123",
+		"tenant_status":            "active",
+		"tenant_membership_status": "active",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/scoped?tenant_id=tenant-123&user_id=identity-123", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusNoContent, recorder.Body.String())
+	}
+}

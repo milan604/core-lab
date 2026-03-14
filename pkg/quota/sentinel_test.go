@@ -22,38 +22,40 @@ func TestSentinelMiddlewareUsesCachedDecisionWhenSentinelUnavailable(t *testing.
 
 	cfg := config.New(config.WithDefaults(map[string]any{
 		"SentinelServiceEndpoint": "http://sentinel.test",
-		"InternalAdminKey":        "platform-internal",
-		"SentinelServiceAPIKey":   "internal-key",
-		"SentinelServiceID":       "sites",
+		"PlatformServiceAPIKey":   "internal-key",
+		"PlatformServiceID":       "sites",
 		"QuotaFailOpen":           false,
 		"QuotaCacheTTLSeconds":    60,
 	}))
 
 	oldFactory := newSentinelClientFunc
 	newSentinelClientFunc = func(log logger.LogManager, cfg *config.Config) *SentinelClient {
-		client := NewSentinelClient(log, cfg)
-		client.httpClient = httplib.NewClient(httplib.WithLogger(log), httplib.WithHTTPClient(&http.Client{
-			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				if r.URL.Path != "/sentinel/internal/api/v1/quota/check" {
-					return responseWithStatus(http.StatusNotFound, `{"error":"not_found"}`), nil
-				}
-				if shouldFail.Load() {
-					return responseWithStatus(http.StatusInternalServerError, `{"error":"temporary_failure"}`), nil
-				}
-				return responseWithStatus(http.StatusOK, `{
-					"allowed": true,
-					"reason": "ok",
-					"tenant_id": "tenant-1",
-					"service_id": "sites",
-					"metric": "api_calls_per_day",
-					"limit": 10,
-					"used": 1,
-					"remaining": 9,
-					"reset_at": "2030-01-01T00:00:00Z"
-				}`), nil
-			}),
-		}))
-		return client
+		return &SentinelClient{
+			log:     log,
+			cfg:     cfg,
+			baseURL: "http://sentinel.test/sentinel",
+			httpClient: httplib.NewClient(httplib.WithLogger(log), httplib.WithHTTPClient(&http.Client{
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					if r.URL.Path != "/sentinel/internal/api/v1/quota/check" {
+						return responseWithStatus(http.StatusNotFound, `{"error":"not_found"}`), nil
+					}
+					if shouldFail.Load() {
+						return responseWithStatus(http.StatusInternalServerError, `{"error":"temporary_failure"}`), nil
+					}
+					return responseWithStatus(http.StatusOK, `{
+						"allowed": true,
+						"reason": "ok",
+						"tenant_id": "tenant-1",
+						"service_id": "sites",
+						"metric": "api_calls_per_day",
+						"limit": 10,
+						"used": 1,
+						"remaining": 9,
+						"reset_at": "2030-01-01T00:00:00Z"
+					}`), nil
+				}),
+			})),
+		}
 	}
 	defer func() {
 		newSentinelClientFunc = oldFactory
@@ -100,22 +102,24 @@ func TestSentinelMiddlewareFailsClosedWithoutCachedDecision(t *testing.T) {
 
 	cfg := config.New(config.WithDefaults(map[string]any{
 		"SentinelServiceEndpoint": "http://sentinel.test",
-		"InternalAdminKey":        "platform-internal",
-		"SentinelServiceAPIKey":   "internal-key",
-		"SentinelServiceID":       "sites",
+		"PlatformServiceAPIKey":   "internal-key",
+		"PlatformServiceID":       "sites",
 		"QuotaFailOpen":           false,
 		"QuotaCacheTTLSeconds":    60,
 	}))
 
 	oldFactory := newSentinelClientFunc
 	newSentinelClientFunc = func(log logger.LogManager, cfg *config.Config) *SentinelClient {
-		client := NewSentinelClient(log, cfg)
-		client.httpClient = httplib.NewClient(httplib.WithLogger(log), httplib.WithHTTPClient(&http.Client{
-			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				return responseWithStatus(http.StatusInternalServerError, `{"error":"temporary_failure"}`), nil
-			}),
-		}))
-		return client
+		return &SentinelClient{
+			log:     log,
+			cfg:     cfg,
+			baseURL: "http://sentinel.test/sentinel",
+			httpClient: httplib.NewClient(httplib.WithLogger(log), httplib.WithHTTPClient(&http.Client{
+				Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+					return responseWithStatus(http.StatusInternalServerError, `{"error":"temporary_failure"}`), nil
+				}),
+			})),
+		}
 	}
 	defer func() {
 		newSentinelClientFunc = oldFactory

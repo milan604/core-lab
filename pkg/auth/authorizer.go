@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/milan604/core-lab/pkg/controlplane"
 	"github.com/milan604/core-lab/pkg/logger"
 	"github.com/milan604/core-lab/pkg/permissions"
 )
@@ -41,6 +42,7 @@ type Authorizer struct {
 	verifier                      *jwtVerifier
 	log                           logger.LogManager
 	bypassServiceTokenPermissions bool
+	permissionDecisions           permissionDecisionClient
 }
 
 // Config provides configuration for the authorizer.
@@ -62,6 +64,7 @@ func NewAuthorizer(cfg Config, log logger.LogManager) (*Authorizer, error) {
 		verifier:                      verifier,
 		log:                           log,
 		bypassServiceTokenPermissions: bypassServiceTokenPermissions,
+		permissionDecisions:           newPermissionDecisionClientFunc(cfg, log),
 	}, nil
 }
 
@@ -87,6 +90,37 @@ func (a *Authorizer) RequirePermission(code string) gin.HandlerFunc {
 		}
 
 		if a.bypassServiceTokenPermissions && claims.IsServiceToken() {
+			c.Next()
+			return
+		}
+
+		if !claims.IsServiceToken() && a.permissionDecisions != nil {
+			req, err := buildPermissionDecisionRequest(c, claims, code)
+			if err != nil {
+				log.ErrorFCtx(c.Request.Context(), "Permission decision request build failed (permission=%s): %v", code, err)
+				a.abortWithJSON(c, http.StatusInternalServerError, "authorization_request_invalid", "authorization request could not be constructed", log)
+				return
+			}
+
+			decision, err := a.permissionDecisions.Decide(c.Request.Context(), req)
+			if err != nil {
+				log.ErrorFCtx(c.Request.Context(), "Permission decision request failed (permission=%s subject=%s): %v", code, claims.Subject, err)
+				a.abortWithJSON(c, http.StatusServiceUnavailable, "authorization_unavailable", "authorization service is unavailable", log)
+				return
+			}
+
+			if !decision.Allowed {
+				log.WarnFCtx(
+					c.Request.Context(),
+					"Permission decision denied (permission=%s subject=%s reasons=%s)",
+					code,
+					claims.Subject,
+					strings.Join(decision.Reasons, ","),
+				)
+				a.abortWithJSON(c, http.StatusForbidden, "permission_denied", "caller lacks required permission", log)
+				return
+			}
+
 			c.Next()
 			return
 		}
@@ -231,12 +265,12 @@ func newJWTVerifier(cfg Config) (*jwtVerifier, error) {
 
 	remote := newRemoteKeyProvider(cfg)
 	if staticKey == nil && remote == nil {
-		return nil, fmt.Errorf("jwt authorizer: RSAPublicKey or SentinelServiceEndpoint must be configured")
+		return nil, fmt.Errorf("jwt authorizer: RSAPublicKey or %s/%s must be configured", controlplane.KeyBaseURL, controlplane.LegacyKeyBaseURL)
 	}
 
 	// Issuer and audience are optional - use empty strings if not configured
-	issuer := strings.TrimSpace(cfg.GetString("SentinelTokenIssuer"))
-	aud := parseAudience(cfg.GetString("SentinelTokenAudience"))
+	issuer := controlplane.ResolveTokenIssuer(cfg)
+	aud := controlplane.ResolveTokenAudienceFromStringGetter(cfg)
 
 	return &jwtVerifier{
 		staticKey: staticKey,

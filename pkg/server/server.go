@@ -170,12 +170,20 @@ func startTLSServer(srv *http.Server, so *startOptions) {
 			log.Print("mTLS: failed to parse CA certificate")
 			return
 		}
+		clientAuthMode := tls.RequireAndVerifyClientCert
+		if so.tlsClientAuthMode == 2 {
+			clientAuthMode = tls.VerifyClientCertIfGiven
+		}
 		srv.TLSConfig = &tls.Config{
 			ClientCAs:  caPool,
-			ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientAuth: clientAuthMode,
 			MinVersion: tls.VersionTLS12,
 		}
-		fmt.Println("Server started 🚀 (mTLS)")
+		if so.tlsClientAuthMode == 2 {
+			fmt.Println("Server started 🚀 (TLS + optional client certificates)")
+		} else {
+			fmt.Println("Server started 🚀 (mTLS)")
+		}
 	} else {
 		fmt.Println("Server started 🚀 (TLS)")
 	}

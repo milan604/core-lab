@@ -15,6 +15,7 @@ import (
 
 	"github.com/milan604/core-lab/pkg/auth"
 	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/controlplane"
 	coreerrors "github.com/milan604/core-lab/pkg/errors"
 	httplib "github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
@@ -109,22 +110,24 @@ func MessageForReason(reason string) string {
 }
 
 type SentinelClient struct {
-	log         logger.LogManager
-	httpClient  *httplib.Client
-	cfg         *config.Config
-	baseURL     string
-	internalKey string
+	log        logger.LogManager
+	httpClient *httplib.Client
+	cfg        *config.Config
+	baseURL    string
+	initErr    error
 }
 
 var newSentinelClientFunc = NewSentinelClient
 
 func NewSentinelClient(log logger.LogManager, cfg *config.Config) *SentinelClient {
+	api := controlplane.APIFromConfig(cfg)
+	httpClient, err := httplib.NewInternalControlPlaneClient(log, cfg)
 	return &SentinelClient{
-		log:         log,
-		httpClient:  httplib.NewClient(httplib.WithLogger(log)),
-		cfg:         cfg,
-		baseURL:     httplib.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint")),
-		internalKey: httplib.InternalAuthKey(cfg),
+		log:        log,
+		httpClient: httpClient,
+		cfg:        cfg,
+		baseURL:    api.BaseURL,
+		initErr:    err,
 	}
 }
 
@@ -133,10 +136,13 @@ func (c *SentinelClient) CheckTenantQuota(ctx context.Context, token, serviceID,
 		return CheckResponse{}, fmt.Errorf("quota client is nil")
 	}
 	if strings.TrimSpace(c.baseURL) == "" {
-		return CheckResponse{}, fmt.Errorf("SentinelServiceEndpoint not configured")
+		return CheckResponse{}, fmt.Errorf("%s or %s not configured", controlplane.KeyBaseURL, controlplane.LegacyKeyBaseURL)
 	}
-	if strings.TrimSpace(c.internalKey) == "" {
-		return CheckResponse{}, fmt.Errorf("internal auth key not configured")
+	if c.initErr != nil {
+		return CheckResponse{}, fmt.Errorf("control-plane client initialization failed: %w", c.initErr)
+	}
+	if c.httpClient == nil {
+		return CheckResponse{}, fmt.Errorf("control-plane client is not configured")
 	}
 
 	payload := CheckRequest{
@@ -151,12 +157,11 @@ func (c *SentinelClient) CheckTenantQuota(ctx context.Context, token, serviceID,
 		return CheckResponse{}, fmt.Errorf("encode quota request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/internal/api/v1/quota/check", &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, controlplane.API{BaseURL: c.baseURL}.QuotaCheckURL(), &body)
 	if err != nil {
 		return CheckResponse{}, fmt.Errorf("create quota request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Internal-Key", c.internalKey)
 
 	resp, err := c.httpClient.Do(ctx, req)
 	if err != nil {
@@ -193,7 +198,7 @@ func NewSentinelMiddlewareConfig(cfg *config.Config) SentinelMiddlewareConfig {
 
 	return SentinelMiddlewareConfig{
 		Enabled:   cfg.GetBoolD("QuotaEnabled", true),
-		ServiceID: strings.TrimSpace(cfg.GetString("SentinelServiceID")),
+		ServiceID: controlplane.ResolveServiceID(cfg),
 		Metric:    strings.TrimSpace(cfg.GetStringD("QuotaMetricName", DefaultMetricAPICallsPerDay)),
 		FailOpen:  cfg.GetBoolD("QuotaFailOpen", false),
 		CacheTTL:  time.Duration(cacheTTLSeconds) * time.Second,

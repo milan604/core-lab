@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/milan604/core-lab/pkg/config"
+	"github.com/milan604/core-lab/pkg/controlplane"
 	"github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
 )
@@ -21,10 +22,9 @@ func LoaderFromHTTP(cfg *config.Config, log logger.LogManager) Loader {
 			return nil, fmt.Errorf("logger not configured")
 		}
 
-		// Get sentinel service URL from config
-		sentinelURL := http.NormalizeSentinelBaseURL(cfg.GetString("SentinelServiceEndpoint"))
-		if sentinelURL == "" {
-			return nil, fmt.Errorf("SentinelServiceEndpoint not configured")
+		api := controlplane.APIFromConfig(cfg)
+		if !api.Valid() {
+			return nil, fmt.Errorf("%s or %s not configured", controlplane.KeyBaseURL, controlplane.LegacyKeyBaseURL)
 		}
 
 		// Create HTTP client with token provider using http package directly
@@ -33,11 +33,9 @@ func LoaderFromHTTP(cfg *config.Config, log logger.LogManager) Loader {
 			return nil, fmt.Errorf("failed to create HTTP client with token provider: %w", err)
 		}
 
-		// Make HTTP call directly to sentinel service
-		url := fmt.Sprintf("%s/api/v1/permissions/bitmask", sentinelURL)
 		var catalogResponse StandardCatalogResponse
 
-		err = httpClient.GetJSON(ctx, url, &catalogResponse)
+		err = httpClient.GetJSON(ctx, api.PermissionCatalogURL(), &catalogResponse)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch permission catalog: %w", err)
 		}

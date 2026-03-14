@@ -192,8 +192,8 @@ Both `Bootstrap` and `Sync` perform the same operations:
 The roles package requires the following configuration (same as permissions and http packages):
 
 - `SentinelServiceEndpoint`: URL of the sentinel service (required)
-- `SentinelServiceID`: Service ID for authentication (required)
-- `SentinelServiceAPIKey`: API key for authentication (required)
+- `PlatformServiceID`: Service ID for authentication (required)
+- `PlatformServiceAPIKey`: API key for authentication (required)
 
 See `docs/config-variables.md` for complete configuration documentation.
 

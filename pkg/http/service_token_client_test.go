@@ -127,6 +127,19 @@ func TestNewClientWithServiceTokenSupportsPlatformKeys(t *testing.T) {
 	if client == nil {
 		t.Fatalf("NewClientWithServiceToken() returned nil client")
 	}
+	transport, ok := client.httpClient.Transport.(*stdhttp.Transport)
+	if !ok || transport == nil {
+		t.Fatalf("expected http transport with TLS config, got %T", client.httpClient.Transport)
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("expected TLS client config to be set on returned client")
+	}
+	if transport.TLSClientConfig.RootCAs == nil {
+		t.Fatal("expected custom RootCAs to be configured on returned client")
+	}
+	if len(transport.TLSClientConfig.Certificates) != 1 {
+		t.Fatalf("expected client certificate to be configured, got %d", len(transport.TLSClientConfig.Certificates))
+	}
 }
 
 func TestNewInternalControlPlaneClientForAudienceSupportsPlatformKeys(t *testing.T) {

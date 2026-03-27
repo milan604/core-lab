@@ -176,11 +176,12 @@ func NewClientWithServiceTokenForAudience(log logger.LogManager, cfg *config.Con
 		HTTPClient: baseClient,
 	})
 
-	// Create HTTP client with token provider configured
-	return NewClient(
-		WithLogger(log),
-		WithTokenProvider(tokenProvider, 1*time.Minute), // Refresh buffer of 1 minute
-	), nil
+	clientOpts := append([]ClientOption{}, mtlsOpts...)
+	clientOpts = append(clientOpts, WithTokenProvider(tokenProvider, 1*time.Minute))
+
+	// Create HTTP client with token provider configured and the same trust
+	// configuration used for token retrieval.
+	return NewClient(clientOpts...), nil
 }
 
 // NewInternalControlPlaneClient creates a token-authenticated client scoped to

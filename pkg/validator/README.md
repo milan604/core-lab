@@ -13,7 +13,7 @@ Thin wrapper around go-playground/validator integrated with Gin binding. Convert
 ```go
 v := validator.New()
 
-// Optional: custom validations
+// Optional: custom validations (applies to Gin ShouldBind* too)
 _ = v.RegisterValidation("is-cool", func(fl gvalidator.FieldLevel) bool { return true })
 
 // Optional: custom messages per tag
@@ -22,7 +22,7 @@ v.RegisterTagError("required", apperr.ErrorCodeValidationFail, func(fe gvalidato
 })
 
 // In handlers
-type Body struct { Email string `json:"email" validate:"required,email"` }
+type Body struct { Email string `json:"email" binding:"required,email"` }
 body, appErr := validator.BindJSON[Body](v, c)
 if appErr != nil { return c.Error(appErr) }
 ```

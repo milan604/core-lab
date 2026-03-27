@@ -47,9 +47,6 @@ type ValidatorEngine interface {
 
 // New creates a new Validator instance and wires up Gin's validator engine for tag->name resolution.
 func New() *Validator {
-	v := gvalidator.New()
-
-	// set up default field name function similar to your earlier impl
 	fieldNameFn := func(f reflect.StructField) string {
 		if name := getTagName(f, "json"); name != "" {
 			return name
@@ -63,19 +60,29 @@ func New() *Validator {
 		return f.Name
 	}
 
-	// register with gin binding engine so FieldError.Field() reflects tag name
-	if be, ok := binding.Validator.Engine().(*gvalidator.Validate); ok {
-		be.RegisterTagNameFunc(func(fld reflect.StructField) string {
-			return fieldNameFn(fld)
-		})
-		// copy other settings if needed
-	}
+	v := validatorEngine(fieldNameFn)
 
 	return &Validator{
 		v:                v,
 		tagErrorBuilders: make(map[string]TagErrorBuilder),
 		fieldNameFn:      fieldNameFn,
 	}
+}
+
+func validatorEngine(fieldNameFn func(reflect.StructField) string) *gvalidator.Validate {
+	if be, ok := binding.Validator.Engine().(*gvalidator.Validate); ok && be != nil {
+		be.RegisterTagNameFunc(func(fld reflect.StructField) string {
+			return fieldNameFn(fld)
+		})
+		return be
+	}
+
+	v := gvalidator.New()
+	v.SetTagName("binding")
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		return fieldNameFn(fld)
+	})
+	return v
 }
 
 // helper to get tag name

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	coreaudit "github.com/milan604/core-lab/pkg/audit"
@@ -200,7 +201,8 @@ func startTLSServer(srv *http.Server, so *startOptions) {
 
 func handleShutdown(srv *http.Server, so *startOptions) error {
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(quit)
 	<-quit
 	if so.logger != nil {
 		so.logger.InfoF("shutdown initiated")

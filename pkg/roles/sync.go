@@ -3,10 +3,11 @@ package roles
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/milan604/core-lab/pkg/config"
 	"github.com/milan604/core-lab/pkg/controlplane"
-	"github.com/milan604/core-lab/pkg/http"
+	httplib "github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
 	"github.com/milan604/core-lab/pkg/permissions"
 )
@@ -55,7 +56,7 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 
 	// Create HTTP client with service token authentication (similar to permissions package)
 	// This uses http.NewClientWithServiceToken internally, which handles service token authentication
-	httpClient, err := http.NewClientWithServiceToken(log, cfg)
+	httpClient, err := httplib.NewClientWithServiceToken(log, cfg)
 	if err != nil {
 		log.ErrorFCtx(ctx, "Failed to create HTTP client with service token: %v", err)
 		return fmt.Errorf("failed to create HTTP client: %w", err)
@@ -74,21 +75,21 @@ func Sync(ctx context.Context, definitions []Definition, cfg *config.Config, log
 
 	log.InfoFCtx(ctx, "Roles validation completed successfully. Validated %d roles", len(validatedRoles))
 
-	// Assign permissions to roles
+	// Reconcile each service slice of the role to match the desired definition.
 	for _, roleDef := range validatedRoles {
-		if err := assignPermissionsToRole(ctx, roleDef.RoleID, roleDef.Permissions, api, httpClient, log); err != nil {
-			log.ErrorFCtx(ctx, "Failed to assign permissions to role %s in Sentinel: %v", roleDef.RoleID, err)
-			return fmt.Errorf("failed to assign permissions to role %s: %w", roleDef.RoleID, err)
+		if err := syncPermissionsToRole(ctx, roleDef, api, httpClient, log); err != nil {
+			log.ErrorFCtx(ctx, "Failed to sync permissions to role %s in Sentinel: %v", roleDef.RoleID, err)
+			return fmt.Errorf("failed to sync permissions to role %s: %w", roleDef.RoleID, err)
 		}
 	}
 
-	log.InfoFCtx(ctx, "Default permissions assigned to native roles successfully")
+	log.InfoFCtx(ctx, "Default permissions synchronized to native roles successfully")
 
 	return nil
 }
 
 // validateRoleIDs validates that role IDs exist in Sentinel using bulk API
-func validateRoleIDs(ctx context.Context, roleIDs []string, api controlplane.API, httpClient *http.Client, log logger.LogManager) error {
+func validateRoleIDs(ctx context.Context, roleIDs []string, api controlplane.API, httpClient *httplib.Client, log logger.LogManager) error {
 	if len(roleIDs) == 0 {
 		return nil
 	}
@@ -141,7 +142,7 @@ func validateRoleIDs(ctx context.Context, roleIDs []string, api controlplane.API
 }
 
 // getPermissionsByCode gets permission IDs from Sentinel using permission codes
-func getPermissionsByCode(ctx context.Context, codes []string, api controlplane.API, httpClient *http.Client, log logger.LogManager) ([]string, error) {
+func getPermissionsByCode(ctx context.Context, codes []string, api controlplane.API, httpClient *httplib.Client, log logger.LogManager) ([]string, error) {
 	if len(codes) == 0 {
 		return []string{}, nil
 	}
@@ -180,50 +181,94 @@ func getPermissionsByCode(ctx context.Context, codes []string, api controlplane.
 }
 
 // assignPermissionsToRole assigns permissions to a role in Sentinel
-func assignPermissionsToRole(ctx context.Context, roleID string, permissionRefs []permissions.Reference, api controlplane.API, httpClient *http.Client, log logger.LogManager) error {
-	if len(permissionRefs) == 0 {
-		log.InfoFCtx(ctx, "No permissions to assign to role %s", roleID)
+func syncPermissionsToRole(ctx context.Context, roleDef *Definition, api controlplane.API, httpClient *httplib.Client, log logger.LogManager) error {
+	if roleDef == nil {
 		return nil
 	}
 
 	// Convert permission references to codes
-	codes := make([]string, 0, len(permissionRefs))
-	for _, ref := range permissionRefs {
+	codes := make([]string, 0, len(roleDef.Permissions))
+	for _, ref := range roleDef.Permissions {
 		code := permissions.GenerateCode(ref.Service, ref.Category, ref.Action)
 		codes = append(codes, code)
 	}
 
-	// Get permission IDs from codes
-	permissionIDs, err := getPermissionsByCode(ctx, codes, api, httpClient, log)
-	if err != nil {
-		return fmt.Errorf("failed to get permissions by code: %w", err)
-	}
-
-	if len(permissionIDs) == 0 {
-		log.WarnFCtx(ctx, "No permission IDs found for role %s", roleID)
+	managedServices := uniqueManagedServices(roleDef)
+	if len(codes) == 0 && len(managedServices) == 0 {
+		log.InfoFCtx(ctx, "No managed permissions or services configured for role %s", roleDef.RoleID)
 		return nil
 	}
 
+	permissionIDs := []string{}
+	if len(codes) > 0 {
+		var err error
+		permissionIDs, err = getPermissionsByCode(ctx, codes, api, httpClient, log)
+		if err != nil {
+			return fmt.Errorf("failed to get permissions by code: %w", err)
+		}
+	}
+
 	// Request structure
-	type AssignPermissionsToRoleRequestBody struct {
-		PermissionIDs []string `json:"permissions" binding:"required"`
+	type SyncPermissionsToRoleRequestBody struct {
+		PermissionIDs []string `json:"permissions"`
+		Services      []string `json:"services,omitempty"`
 	}
 
 	// Response structure
-	type AssignPermissionsToRoleResponse struct {
+	type SyncPermissionsToRoleResponse struct {
 		Message string `json:"message"`
 	}
 
-	request := AssignPermissionsToRoleRequestBody{
+	request := SyncPermissionsToRoleRequestBody{
 		PermissionIDs: permissionIDs,
+		Services:      managedServices,
 	}
 
-	var response []AssignPermissionsToRoleResponse
-	if err := httpClient.PostJSON(ctx, api.RolePermissionsURL(roleID), request, &response); err != nil {
-		log.ErrorFCtx(ctx, "Failed to assign permissions to role %s: %v", roleID, err)
-		return fmt.Errorf("failed to assign permissions to role: %w", err)
+	var response []SyncPermissionsToRoleResponse
+	if err := httpClient.PutJSON(ctx, api.RolePermissionsURL(roleDef.RoleID), request, &response); err != nil {
+		log.ErrorFCtx(ctx, "Failed to sync permissions to role %s: %v", roleDef.RoleID, err)
+		return fmt.Errorf("failed to sync permissions to role: %w", err)
 	}
 
-	log.InfoFCtx(ctx, "Successfully assigned %d permissions to role %s", len(permissionIDs), roleID)
+	log.InfoFCtx(ctx, "Successfully synchronized %d permissions across %d services to role %s", len(permissionIDs), len(managedServices), roleDef.RoleID)
 	return nil
+}
+
+func uniqueManagedServices(roleDef *Definition) []string {
+	if roleDef == nil {
+		return nil
+	}
+
+	services := make([]string, 0, len(roleDef.ManagedServices)+len(roleDef.Permissions))
+	seen := make(map[string]struct{}, len(roleDef.ManagedServices)+len(roleDef.Permissions))
+
+	for _, service := range roleDef.ManagedServices {
+		normalized := normalizeManagedService(service)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		services = append(services, normalized)
+	}
+
+	for _, ref := range roleDef.Permissions {
+		normalized := normalizeManagedService(ref.Service)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		services = append(services, normalized)
+	}
+
+	return services
+}
+
+func normalizeManagedService(service string) string {
+	return strings.ToLower(strings.TrimSpace(service))
 }

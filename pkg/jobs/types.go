@@ -197,6 +197,14 @@ type JobFilter struct {
 	Offset   int
 }
 
+// ClaimFilter constrains which jobs a manager is allowed to claim from a
+// shared store. This prevents one service from stealing another service's
+// jobs when multiple managers share the same backend.
+type ClaimFilter struct {
+	Queues []string
+	Types  []string
+}
+
 // QueueStats describes aggregate queue state.
 type QueueStats struct {
 	Name      string         `json:"name"`

@@ -34,12 +34,41 @@ type RedisStore struct {
 var claimReadyScript = redis.NewScript(`
 local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
 local claimed = {}
+local queueFilter = {}
+local typeFilter = {}
+local queueFilterEnabled = tonumber(ARGV[4]) == 1
+local typeFilterEnabled = tonumber(ARGV[5]) == 1
+local index = 6
+
+if queueFilterEnabled then
+  local queueCount = tonumber(ARGV[index]) or 0
+  index = index + 1
+  for i = 1, queueCount do
+    queueFilter[ARGV[index]] = true
+    index = index + 1
+  end
+end
+
+if typeFilterEnabled then
+  local typeCount = tonumber(ARGV[index]) or 0
+  index = index + 1
+  for i = 1, typeCount do
+    typeFilter[ARGV[index]] = true
+    index = index + 1
+  end
+end
 
 for _, id in ipairs(ids) do
   local raw = redis.call('GET', KEYS[2] .. id)
   if raw then
     local job = cjson.decode(raw)
     if job["status"] == "queued" or job["status"] == "scheduled" then
+      if queueFilterEnabled and not queueFilter[job["queue"]] then
+        goto continue
+      end
+      if typeFilterEnabled and not typeFilter[job["type"]] then
+        goto continue
+      end
       job["status"] = "running"
       job["attempt"] = (job["attempt"] or 0) + 1
       job["started_at"] = ARGV[3]
@@ -54,6 +83,7 @@ for _, id in ipairs(ids) do
   else
     redis.call('ZREM', KEYS[1], id)
   end
+  ::continue::
 end
 
 return claimed
@@ -258,15 +288,39 @@ func (s *RedisStore) List(ctx context.Context, filter JobFilter) ([]Job, error) 
 	return result, nil
 }
 
-func (s *RedisStore) ClaimReady(ctx context.Context, now time.Time, limit int) ([]Job, error) {
+func (s *RedisStore) ClaimReady(ctx context.Context, now time.Time, limit int, filter ClaimFilter) ([]Job, error) {
 	if limit <= 0 {
 		return nil, nil
+	}
+
+	args := []any{
+		timeScore(now.UTC()),
+		limit,
+		now.UTC().Format(time.RFC3339Nano),
+		0,
+		0,
+	}
+
+	if len(filter.Queues) > 0 {
+		args[3] = 1
+		args = append(args, len(filter.Queues))
+		for _, queue := range filter.Queues {
+			args = append(args, queue)
+		}
+	}
+
+	if len(filter.Types) > 0 {
+		args[4] = 1
+		args = append(args, len(filter.Types))
+		for _, jobType := range filter.Types {
+			args = append(args, jobType)
+		}
 	}
 
 	claimedRaw, err := claimReadyScript.Run(ctx, s.client, []string{
 		s.availableIndexKey(),
 		s.jobPrefix(),
-	}, timeScore(now.UTC()), limit, now.UTC().Format(time.RFC3339Nano)).Result()
+	}, args...).Result()
 	if err != nil {
 		return nil, err
 	}

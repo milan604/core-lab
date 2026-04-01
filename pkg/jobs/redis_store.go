@@ -63,27 +63,29 @@ for _, id in ipairs(ids) do
   if raw then
     local job = cjson.decode(raw)
     if job["status"] == "queued" or job["status"] == "scheduled" then
+      local allowed = true
       if queueFilterEnabled and not queueFilter[job["queue"]] then
-        goto continue
+        allowed = false
       end
-      if typeFilterEnabled and not typeFilter[job["type"]] then
-        goto continue
+      if allowed and typeFilterEnabled and not typeFilter[job["type"]] then
+        allowed = false
       end
-      job["status"] = "running"
-      job["attempt"] = (job["attempt"] or 0) + 1
-      job["started_at"] = ARGV[3]
-      job["updated_at"] = ARGV[3]
-      local updated = cjson.encode(job)
-      redis.call('SET', KEYS[2] .. id, updated)
-      redis.call('ZREM', KEYS[1], id)
-      table.insert(claimed, updated)
+      if allowed then
+        job["status"] = "running"
+        job["attempt"] = (job["attempt"] or 0) + 1
+        job["started_at"] = ARGV[3]
+        job["updated_at"] = ARGV[3]
+        local updated = cjson.encode(job)
+        redis.call('SET', KEYS[2] .. id, updated)
+        redis.call('ZREM', KEYS[1], id)
+        table.insert(claimed, updated)
+      end
     else
       redis.call('ZREM', KEYS[1], id)
     end
   else
     redis.call('ZREM', KEYS[1], id)
   end
-  ::continue::
 end
 
 return claimed

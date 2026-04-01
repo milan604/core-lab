@@ -9,9 +9,11 @@ All notable changes to this project are documented here, following the Keep a Ch
 - Centralized error handler middleware and improved server composition.
 - Validator helpers for JSON/Query/URI/Header and combined binders.
 - Utility packages (stringutil, timeutil, validation) with generics.
+- `pkg/jobs` for background job processing with worker pools, delayed execution, retries, stats, and admin APIs.
 
 ### Changed
 - Refactored server options and middleware ordering for clarity and maintainability.
+- Expanded repository tooling and examples to cover background job runtimes and standalone worker services.
 
 ### Fixed
 - Import path alignment to module `corelab`.

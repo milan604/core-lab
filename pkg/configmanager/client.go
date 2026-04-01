@@ -100,7 +100,7 @@ type NamespacePublishRequest struct {
 }
 
 type NamespacePublishResponse struct {
-	Namespace Namespace       `json:"namespace"`
+	Namespace Namespace        `json:"namespace"`
 	Release   NamespaceRelease `json:"release"`
 }
 

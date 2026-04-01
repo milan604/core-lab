@@ -13,10 +13,10 @@ import (
 type MetricsIface interface {
 	// IncrementCounter increments a counter metric
 	IncrementCounter(ctx context.Context, name string, attrs ...attribute.KeyValue)
-	
+
 	// RecordGauge records a gauge metric
 	RecordGauge(ctx context.Context, name string, value float64, attrs ...attribute.KeyValue)
-	
+
 	// RecordHistogram records a histogram metric
 	RecordHistogram(ctx context.Context, name string, value float64, attrs ...attribute.KeyValue)
 }
@@ -29,7 +29,7 @@ type Metrics struct {
 // NewMetrics creates a new Metrics instance
 func NewMetrics(serviceName string) (MetricsIface, error) {
 	meter := otel.Meter(serviceName)
-	
+
 	return &Metrics{
 		meter: meter,
 	}, nil
@@ -81,4 +81,3 @@ func (m *Metrics) RecordHistogram(ctx context.Context, name string, value float6
 	}
 	histogram.Record(ctx, value, metric.WithAttributes(attrs...))
 }
-

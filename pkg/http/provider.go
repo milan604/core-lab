@@ -128,4 +128,3 @@ func (p *CustomTokenProvider) FetchToken(ctx context.Context) (string, time.Time
 	}
 	return p.FetchFunc(ctx)
 }
-

@@ -24,9 +24,9 @@ func FromSource[T PermissionSource](sources map[string]T) *Catalog {
 	for _, source := range sources {
 		definitions = append(definitions, Definition{
 			Reference: Reference{
-				Service:     source.GetService(),
-				Category:    source.GetCategory(),
-				Action: source.GetAction(),
+				Service:  source.GetService(),
+				Category: source.GetCategory(),
+				Action:   source.GetAction(),
 			},
 			Name:        source.GetName(),
 			Description: source.GetDescription(),
@@ -44,9 +44,9 @@ func FromSlice[T PermissionSource](sources []T) *Catalog {
 	for _, source := range sources {
 		definitions = append(definitions, Definition{
 			Reference: Reference{
-				Service:     source.GetService(),
-				Category:    source.GetCategory(),
-				Action: source.GetAction(),
+				Service:  source.GetService(),
+				Category: source.GetCategory(),
+				Action:   source.GetAction(),
 			},
 			Name:        source.GetName(),
 			Description: source.GetDescription(),

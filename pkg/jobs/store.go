@@ -15,7 +15,7 @@ type Store interface {
 	Create(context.Context, Job) (Job, error)
 	Get(context.Context, string) (Job, bool, error)
 	List(context.Context, JobFilter) ([]Job, error)
-	ClaimReady(context.Context, time.Time, int) ([]Job, error)
+	ClaimReady(context.Context, time.Time, int, ClaimFilter) ([]Job, error)
 	MarkSucceeded(context.Context, string, jsonRawResult, time.Time) (Job, error)
 	MarkRetry(context.Context, string, string, time.Time, time.Time) (Job, error)
 	MarkFailed(context.Context, string, string, time.Time) (Job, error)
@@ -125,12 +125,27 @@ func (s *MemoryStore) List(_ context.Context, filter JobFilter) ([]Job, error) {
 }
 
 // ClaimReady transitions scheduled jobs when due and claims queued jobs for workers.
-func (s *MemoryStore) ClaimReady(_ context.Context, now time.Time, limit int) ([]Job, error) {
+func (s *MemoryStore) ClaimReady(_ context.Context, now time.Time, limit int, filter ClaimFilter) ([]Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if limit <= 0 {
 		return nil, nil
+	}
+
+	allowedQueues := make(map[string]struct{}, len(filter.Queues))
+	for _, queue := range filter.Queues {
+		if queue == "" {
+			continue
+		}
+		allowedQueues[queue] = struct{}{}
+	}
+	allowedTypes := make(map[string]struct{}, len(filter.Types))
+	for _, jobType := range filter.Types {
+		if jobType == "" {
+			continue
+		}
+		allowedTypes[jobType] = struct{}{}
 	}
 
 	type candidate struct {
@@ -145,6 +160,16 @@ func (s *MemoryStore) ClaimReady(_ context.Context, now time.Time, limit int) ([
 			job.UpdatedAt = now
 		}
 		if job.Status == StatusQueued && !job.AvailableAt.After(now) {
+			if len(allowedQueues) > 0 {
+				if _, ok := allowedQueues[job.Queue]; !ok {
+					continue
+				}
+			}
+			if len(allowedTypes) > 0 {
+				if _, ok := allowedTypes[job.Type]; !ok {
+					continue
+				}
+			}
 			candidates = append(candidates, candidate{id: job.ID, at: job.AvailableAt})
 		}
 	}

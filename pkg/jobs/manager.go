@@ -369,7 +369,12 @@ func (m *Manager) dispatch(ctx context.Context) error {
 		return nil
 	}
 
-	claimed, err := m.store.ClaimReady(ctx, time.Now().UTC(), availableSlots)
+	claimFilter := ClaimFilter{Types: m.handlerTypes()}
+	if len(claimFilter.Types) == 0 {
+		return nil
+	}
+
+	claimed, err := m.store.ClaimReady(ctx, time.Now().UTC(), availableSlots, claimFilter)
 	if err != nil {
 		return err
 	}
@@ -512,6 +517,18 @@ func (m *Manager) getHandler(jobType string) (*handlerRegistration, bool) {
 	defer m.mu.RUnlock()
 	reg, ok := m.handlers[jobType]
 	return reg, ok
+}
+
+func (m *Manager) handlerTypes() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	types := make([]string, 0, len(m.handlers))
+	for jobType := range m.handlers {
+		types = append(types, jobType)
+	}
+	sort.Strings(types)
+	return types
 }
 
 func (m *Manager) syncStoredGauge(ctx context.Context) {

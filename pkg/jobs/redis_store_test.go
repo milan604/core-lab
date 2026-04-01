@@ -122,7 +122,7 @@ func TestRedisStoreClaimAndLifecycle(t *testing.T) {
 		t.Fatalf("failed to create job: %v", err)
 	}
 
-	claimed, err := store.ClaimReady(ctx, now, 1)
+	claimed, err := store.ClaimReady(ctx, now, 1, ClaimFilter{Types: []string{"demo.lifecycle"}})
 	if err != nil {
 		t.Fatalf("failed to claim jobs: %v", err)
 	}
@@ -159,5 +159,77 @@ func TestRedisStoreClaimAndLifecycle(t *testing.T) {
 	}
 	if stats.Totals[StatusCanceled] != 1 {
 		t.Fatalf("expected 1 canceled job in stats, got %#v", stats.Totals)
+	}
+}
+
+func TestRedisStoreClaimRespectsTypeFilter(t *testing.T) {
+	t.Parallel()
+
+	mini, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	defer mini.Close()
+
+	ctx := context.Background()
+	store, err := NewRedisStoreFromConfig(ctx, RedisStoreConfig{
+		Address:   mini.Addr(),
+		Namespace: "test-claim-filter-jobs",
+	})
+	if err != nil {
+		t.Fatalf("failed to create redis store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	for _, job := range []Job{
+		{
+			ID:          "job-allowed",
+			Type:        "allowed.type",
+			Queue:       "default",
+			Status:      StatusQueued,
+			MaxAttempts: 3,
+			Timeout:     Duration(10 * time.Second),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+			AvailableAt: now,
+		},
+		{
+			ID:          "job-blocked",
+			Type:        "blocked.type",
+			Queue:       "default",
+			Status:      StatusQueued,
+			MaxAttempts: 3,
+			Timeout:     Duration(10 * time.Second),
+			CreatedAt:   now.Add(time.Millisecond),
+			UpdatedAt:   now.Add(time.Millisecond),
+			AvailableAt: now.Add(time.Millisecond),
+		},
+	} {
+		if _, err := store.Create(ctx, job); err != nil {
+			t.Fatalf("failed to create job %s: %v", job.ID, err)
+		}
+	}
+
+	claimed, err := store.ClaimReady(ctx, now.Add(5*time.Millisecond), 10, ClaimFilter{Types: []string{"allowed.type"}})
+	if err != nil {
+		t.Fatalf("failed to claim jobs: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("expected 1 claimed job, got %d", len(claimed))
+	}
+	if claimed[0].Type != "allowed.type" {
+		t.Fatalf("expected allowed.type to be claimed, got %s", claimed[0].Type)
+	}
+
+	blocked, ok, err := store.Get(ctx, "job-blocked")
+	if err != nil {
+		t.Fatalf("failed to fetch blocked job: %v", err)
+	}
+	if !ok {
+		t.Fatalf("blocked job missing")
+	}
+	if blocked.Status != StatusQueued {
+		t.Fatalf("expected blocked job to remain queued, got %s", blocked.Status)
 	}
 }

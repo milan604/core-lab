@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	coreaudit "github.com/milan604/core-lab/pkg/audit"
@@ -170,12 +171,20 @@ func startTLSServer(srv *http.Server, so *startOptions) {
 			log.Print("mTLS: failed to parse CA certificate")
 			return
 		}
+		clientAuthMode := tls.RequireAndVerifyClientCert
+		if so.tlsClientAuthMode == 2 {
+			clientAuthMode = tls.VerifyClientCertIfGiven
+		}
 		srv.TLSConfig = &tls.Config{
 			ClientCAs:  caPool,
-			ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientAuth: clientAuthMode,
 			MinVersion: tls.VersionTLS12,
 		}
-		fmt.Println("Server started 🚀 (mTLS)")
+		if so.tlsClientAuthMode == 2 {
+			fmt.Println("Server started 🚀 (TLS + optional client certificates)")
+		} else {
+			fmt.Println("Server started 🚀 (mTLS)")
+		}
 	} else {
 		fmt.Println("Server started 🚀 (TLS)")
 	}
@@ -192,7 +201,8 @@ func startTLSServer(srv *http.Server, so *startOptions) {
 
 func handleShutdown(srv *http.Server, so *startOptions) error {
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(quit)
 	<-quit
 	if so.logger != nil {
 		so.logger.InfoF("shutdown initiated")

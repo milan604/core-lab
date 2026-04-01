@@ -14,4 +14,3 @@ func Bootstrap(ctx context.Context, definitions []Definition, cfg *config.Config
 	// Delegate to Sync function which handles everything
 	return Sync(ctx, definitions, cfg, log)
 }
-

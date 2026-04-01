@@ -28,7 +28,8 @@ type startOptions struct {
 	tlsKeyFile  string
 
 	// mTLS — optional CA for verifying client certificates
-	tlsClientCAFile string
+	tlsClientCAFile   string
+	tlsClientAuthMode int
 
 	addr string
 }
@@ -67,6 +68,17 @@ func StartWithTLS(certFile, keyFile string) StartOption {
 func StartWithMTLS(clientCAFile string) StartOption {
 	return func(o *startOptions) {
 		o.tlsClientCAFile = clientCAFile
+		o.tlsClientAuthMode = 1
+	}
+}
+
+// StartWithOptionalMTLS enables client-certificate verification without making
+// client certificates mandatory for every route. Pair with route middleware
+// that requires verified client certificates where needed.
+func StartWithOptionalMTLS(clientCAFile string) StartOption {
+	return func(o *startOptions) {
+		o.tlsClientCAFile = clientCAFile
+		o.tlsClientAuthMode = 2
 	}
 }
 

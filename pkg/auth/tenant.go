@@ -59,6 +59,18 @@ func SetTenantID(c *gin.Context, tenantID string) {
 	}
 }
 
+// SetUserID stores the resolved user ID in the gin context for downstream handlers.
+func SetUserID(c *gin.Context, userID string) {
+	scopedUserID := strings.TrimSpace(userID)
+	if scopedUserID == "" {
+		return
+	}
+	c.Set(ctxUserIDKey, scopedUserID)
+	if c.Request != nil {
+		c.Request = c.Request.WithContext(ContextWithUserID(c.Request.Context(), scopedUserID))
+	}
+}
+
 // GetTenantID retrieves the resolved tenant ID from the gin context.
 func GetTenantID(c *gin.Context) (string, bool) {
 	v, exists := c.Get(ctxTenantIDKey)
@@ -67,4 +79,14 @@ func GetTenantID(c *gin.Context) (string, bool) {
 	}
 	tid, ok := v.(string)
 	return tid, ok && tid != ""
+}
+
+// GetUserID retrieves the resolved user ID from the gin context.
+func GetUserID(c *gin.Context) (string, bool) {
+	v, exists := c.Get(ctxUserIDKey)
+	if !exists {
+		return "", false
+	}
+	userID, ok := v.(string)
+	return userID, ok && strings.TrimSpace(userID) != ""
 }

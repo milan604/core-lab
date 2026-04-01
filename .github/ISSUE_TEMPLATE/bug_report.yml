@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a functional bug, regression, or behavior mismatch in core-lab.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+      placeholder: A concise description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Share the smallest reproduction or code path you can.
+      placeholder: |
+        1. Configure ...
+        2. Call ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What packages, services, or users are affected?
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Go version, OS, module version, and any relevant runtime details.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste relevant logs, stack traces, or screenshots if available.
+      render: shell

@@ -1,5 +1,3 @@
-// Package configmanager provides a client for services to publish their config to Sentinel
-// and to fetch other services' config (with optional version and retry).
 package configmanager
 
 import (
@@ -11,274 +9,254 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/milan604/core-lab/pkg/config"
-	corehttp "github.com/milan604/core-lab/pkg/http"
+	"github.com/milan604/core-lab/pkg/controlplane"
+	httplib "github.com/milan604/core-lab/pkg/http"
 	"github.com/milan604/core-lab/pkg/logger"
 )
 
 const (
-	// Config key for Sentinel base URL (e.g. http://sentinel-nginx:4000/sentinel).
-	KeySentinelBaseURL = "SentinelServiceEndpoint"
-	// Config key for internal API auth (X-Internal-Key header).
-	KeyInternalAdminKey = "InternalAdminKey"
+	KeyControlPlaneBaseURL = controlplane.KeyBaseURL
+	KeySentinelBaseURL     = controlplane.LegacyKeyBaseURL
 )
 
-// Client calls Sentinel's service config API (publish and fetch).
 type Client struct {
-	baseURL     string
-	internalKey string
-	httpClient  *http.Client
-	log         logger.LogManager
+	baseURL    string
+	httpClient *httplib.Client
+	log        logger.LogManager
 }
 
-// NewClient builds a client from config. Requires SentinelServiceEndpoint and InternalAdminKey.
 func NewClient(cfg *config.Config, log logger.LogManager) (*Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config not configured")
 	}
-	base := corehttp.NormalizeSentinelBaseURL(cfg.GetString(KeySentinelBaseURL))
+	base := controlplane.ResolveBaseURL(cfg)
 	if base == "" {
-		return nil, fmt.Errorf("%s is required for config manager", KeySentinelBaseURL)
+		return nil, fmt.Errorf("%s or %s is required for config manager", KeyControlPlaneBaseURL, KeySentinelBaseURL)
 	}
-	key := strings.TrimSpace(cfg.GetString(KeyInternalAdminKey))
-	if key == "" {
-		return nil, fmt.Errorf("%s is required to publish/fetch config", KeyInternalAdminKey)
+
+	httpClient, err := httplib.NewInternalControlPlaneClientForAudience(log, cfg, controlplane.ResolveConfigAudience(cfg))
+	if err != nil {
+		return nil, fmt.Errorf("control-plane machine identity requires %s/%s/%s plus mTLS client credentials: %w", controlplane.KeyBaseURL, controlplane.KeyServiceID, controlplane.KeyServiceAPIKey, err)
 	}
+
 	return &Client{
-		baseURL:     base,
-		internalKey: key,
-		httpClient:  &http.Client{Timeout: 15 * time.Second},
-		log:         log,
+		baseURL:    base,
+		httpClient: httpClient,
+		log:        log,
 	}, nil
 }
 
-// ServiceConfig is the response shape for GET config. Version is semver (0.0.0).
-type ServiceConfig struct {
-	ServiceID string         `json:"service_id"`
-	Version   string         `json:"version"`
-	Payload   map[string]any `json:"payload"`
-	CreatedAt string         `json:"created_at,omitempty"`
-	UpdatedAt string         `json:"updated_at,omitempty"`
+type Namespace struct {
+	ID                          string `json:"id"`
+	ServiceID                   string `json:"service_id"`
+	NamespaceKey                string `json:"namespace_key"`
+	DisplayName                 string `json:"display_name"`
+	Description                 string `json:"description"`
+	DefaultDeliveryMode         string `json:"default_delivery_mode"`
+	DefaultWatchMode            string `json:"default_watch_mode"`
+	DefaultWatchIntervalSeconds int    `json:"default_watch_interval_seconds"`
+	RequireApproval             bool   `json:"require_approval"`
+	Active                      bool   `json:"active"`
+	CreatedBy                   string `json:"created_by,omitempty"`
+	CreatedAt                   string `json:"created_at,omitempty"`
+	UpdatedAt                   string `json:"updated_at,omitempty"`
 }
 
-// Publish updates the service's config in Sentinel (PATCH). Idempotent; use when service is ready.
-func (c *Client) Publish(ctx context.Context, serviceID string, payload map[string]any) error {
-	if err := validateServiceID(serviceID); err != nil {
-		return err
-	}
-	if payload == nil {
-		payload = make(map[string]any)
-	}
-	reqURL := c.serviceURL(serviceID, "/config")
-	req, err := c.newJSONRequest(ctx, http.MethodPatch, reqURL, map[string]any{"payload": payload})
-	if err != nil {
-		return err
-	}
-	if err := c.doJSON(req, nil, http.StatusOK, http.StatusCreated); err != nil {
-		return fmt.Errorf("publish config for %s: %w", serviceID, err)
-	}
-	if c.log != nil {
-		c.log.InfoFCtx(ctx, "published config for service %s (version in response)", serviceID)
-	}
-	return nil
+type NamespaceLayer struct {
+	ID          string         `json:"id,omitempty"`
+	ReleaseID   string         `json:"release_id,omitempty"`
+	LayerName   string         `json:"layer_name"`
+	Environment string         `json:"environment,omitempty"`
+	TenantID    string         `json:"tenant_id,omitempty"`
+	ProjectID   string         `json:"project_id,omitempty"`
+	Priority    int            `json:"priority"`
+	Payload     map[string]any `json:"payload"`
+	CreatedAt   string         `json:"created_at,omitempty"`
+	UpdatedAt   string         `json:"updated_at,omitempty"`
 }
 
-// Get fetches a service's config at the exact version (e.g. 1.0.0). Version is required; all parts (major.minor.patch) matter.
-func (c *Client) Get(ctx context.Context, serviceID string, version string) (ServiceConfig, error) {
-	if err := validateServiceID(serviceID); err != nil {
-		return ServiceConfig{}, err
+type NamespaceLayerInput struct {
+	LayerName   string         `json:"layer_name"`
+	Environment string         `json:"environment,omitempty"`
+	TenantID    string         `json:"tenant_id,omitempty"`
+	ProjectID   string         `json:"project_id,omitempty"`
+	Priority    int            `json:"priority,omitempty"`
+	Payload     map[string]any `json:"payload"`
+}
+
+type NamespacePublishRequest struct {
+	ServiceID            string                `json:"service_id"`
+	NamespaceKey         string                `json:"namespace_key"`
+	DisplayName          string                `json:"display_name"`
+	Description          string                `json:"description,omitempty"`
+	Version              string                `json:"version,omitempty"`
+	ApprovalRequired     *bool                 `json:"approval_required,omitempty"`
+	DeliveryMode         string                `json:"delivery_mode,omitempty"`
+	WatchMode            string                `json:"watch_mode,omitempty"`
+	WatchIntervalSeconds int                   `json:"watch_interval_seconds,omitempty"`
+	Layers               []NamespaceLayerInput `json:"layers"`
+}
+
+type NamespacePublishResponse struct {
+	Namespace Namespace        `json:"namespace"`
+	Release   NamespaceRelease `json:"release"`
+}
+
+type NamespaceRelease struct {
+	ID                   string           `json:"id"`
+	NamespaceID          string           `json:"namespace_id"`
+	Version              string           `json:"version"`
+	SchemaID             string           `json:"schema_id,omitempty"`
+	Status               string           `json:"status"`
+	Summary              string           `json:"summary,omitempty"`
+	ApprovalRequired     bool             `json:"approval_required"`
+	DeliveryMode         string           `json:"delivery_mode"`
+	WatchMode            string           `json:"watch_mode"`
+	WatchIntervalSeconds int              `json:"watch_interval_seconds"`
+	ETag                 string           `json:"etag"`
+	CreatedBy            string           `json:"created_by,omitempty"`
+	ApprovedBy           string           `json:"approved_by,omitempty"`
+	ApprovedAt           string           `json:"approved_at,omitempty"`
+	RejectedBy           string           `json:"rejected_by,omitempty"`
+	RejectedAt           string           `json:"rejected_at,omitempty"`
+	RejectionReason      string           `json:"rejection_reason,omitempty"`
+	CreatedAt            string           `json:"created_at,omitempty"`
+	UpdatedAt            string           `json:"updated_at,omitempty"`
+	Layers               []NamespaceLayer `json:"layers,omitempty"`
+}
+
+type NamespaceResolveRequest struct {
+	NamespaceID  string `json:"namespace_id,omitempty"`
+	ServiceID    string `json:"service_id,omitempty"`
+	NamespaceKey string `json:"namespace_key,omitempty"`
+	Version      string `json:"version,omitempty"`
+	Environment  string `json:"environment,omitempty"`
+	TenantID     string `json:"tenant_id,omitempty"`
+	ProjectID    string `json:"project_id,omitempty"`
+}
+
+type NamespaceResolveResponse struct {
+	Namespace            Namespace        `json:"namespace"`
+	ReleaseID            string           `json:"release_id"`
+	Version              string           `json:"version"`
+	DeliveryMode         string           `json:"delivery_mode"`
+	WatchMode            string           `json:"watch_mode"`
+	WatchIntervalSeconds int              `json:"watch_interval_seconds"`
+	ETag                 string           `json:"etag"`
+	MatchedLayers        []NamespaceLayer `json:"matched_layers,omitempty"`
+	Config               map[string]any   `json:"config"`
+}
+
+type NamespaceWatchRequest struct {
+	NamespaceID  string
+	ServiceID    string
+	NamespaceKey string
+}
+
+type NamespaceWatchResponse struct {
+	NamespaceID          string `json:"namespace_id"`
+	ServiceID            string `json:"service_id"`
+	NamespaceKey         string `json:"namespace_key"`
+	ReleaseID            string `json:"release_id"`
+	Version              string `json:"version"`
+	Status               string `json:"status"`
+	DeliveryMode         string `json:"delivery_mode"`
+	WatchMode            string `json:"watch_mode"`
+	WatchIntervalSeconds int    `json:"watch_interval_seconds"`
+	ETag                 string `json:"etag"`
+	UpdatedAt            string `json:"updated_at,omitempty"`
+}
+
+func (c *Client) PublishNamespaceRelease(ctx context.Context, req NamespacePublishRequest) (NamespacePublishResponse, error) {
+	req.ServiceID = strings.TrimSpace(req.ServiceID)
+	req.NamespaceKey = strings.TrimSpace(req.NamespaceKey)
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	req.Description = strings.TrimSpace(req.Description)
+	req.Version = strings.TrimSpace(req.Version)
+	req.DeliveryMode = strings.TrimSpace(req.DeliveryMode)
+	req.WatchMode = strings.TrimSpace(req.WatchMode)
+
+	if req.ServiceID == "" || req.NamespaceKey == "" || req.DisplayName == "" {
+		return NamespacePublishResponse{}, fmt.Errorf("service_id, namespace_key, and display_name are required")
 	}
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return ServiceConfig{}, fmt.Errorf("version is required (e.g. 1.0.0)")
+	if len(req.Layers) == 0 {
+		return NamespacePublishResponse{}, fmt.Errorf("at least one layer is required")
 	}
-	q := url.Values{}
-	q.Set("version", version)
-	reqURL := c.serviceURL(serviceID, "/config") + "?" + q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+
+	request, err := c.newJSONRequest(ctx, http.MethodPost, controlplane.API{BaseURL: c.baseURL}.ConfigPublishURL(), req)
 	if err != nil {
-		return ServiceConfig{}, err
+		return NamespacePublishResponse{}, err
 	}
-	req.Header.Set("X-Internal-Key", c.internalKey)
-	var out ServiceConfig
-	if err := c.doJSON(req, &out, http.StatusOK); err != nil {
-		return ServiceConfig{}, fmt.Errorf("get config for %s@%s: %w", serviceID, version, err)
-	}
-	if out.Payload == nil {
-		out.Payload = make(map[string]any)
+	var out NamespacePublishResponse
+	if err := c.doJSON(request, &out, http.StatusOK, http.StatusCreated); err != nil {
+		return NamespacePublishResponse{}, fmt.Errorf("publish namespace release: %w", err)
 	}
 	return out, nil
 }
 
-// GetWithRetry fetches config and retries with backoff until payload is non-empty or max attempts reached.
-func (c *Client) GetWithRetry(ctx context.Context, serviceID string, version string, maxAttempts int, initialBackoff time.Duration) (ServiceConfig, error) {
-	var lastErr error
-	maxAttempts, backoff := normalizeRetry(maxAttempts, initialBackoff)
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		cfg, err := c.Get(ctx, serviceID, version)
-		if err != nil {
-			lastErr = err
-			if c.log != nil {
-				c.log.WarnFCtx(ctx, "config get %s attempt %d: %v", serviceID, attempt+1, err)
-			}
-			if attempt < maxAttempts-1 {
-				select {
-				case <-ctx.Done():
-					return ServiceConfig{}, ctx.Err()
-				case <-time.After(backoff):
-					backoff *= 2
-				}
-			}
-			continue
-		}
-		// Consider "empty" if payload has no endpoint_url (or is empty map)
-		if len(cfg.Payload) > 0 {
-			return cfg, nil
-		}
-		lastErr = fmt.Errorf("config payload empty")
-		if attempt < maxAttempts-1 {
-			select {
-			case <-ctx.Done():
-				return ServiceConfig{}, ctx.Err()
-			case <-time.After(backoff):
-				backoff *= 2
-			}
-		}
-	}
-	return ServiceConfig{}, lastErr
-}
+func (c *Client) ResolveNamespace(ctx context.Context, req NamespaceResolveRequest) (NamespaceResolveResponse, error) {
+	req.NamespaceID = strings.TrimSpace(req.NamespaceID)
+	req.ServiceID = strings.TrimSpace(req.ServiceID)
+	req.NamespaceKey = strings.TrimSpace(req.NamespaceKey)
+	req.Version = strings.TrimSpace(req.Version)
+	req.Environment = strings.TrimSpace(req.Environment)
+	req.TenantID = strings.TrimSpace(req.TenantID)
+	req.ProjectID = strings.TrimSpace(req.ProjectID)
 
-// SetParameters stores parameter name->value for a service (PATCH .../parameters). Values live in DB; config payload references param names.
-func (c *Client) SetParameters(ctx context.Context, serviceID string, params map[string]string) error {
-	if err := validateServiceID(serviceID); err != nil {
-		return err
+	if req.NamespaceID == "" && (req.ServiceID == "" || req.NamespaceKey == "") {
+		return NamespaceResolveResponse{}, fmt.Errorf("namespace_id or service_id + namespace_key is required")
 	}
-	if len(params) == 0 {
-		return nil
-	}
-	reqURL := c.serviceURL(serviceID, "/parameters")
-	req, err := c.newJSONRequest(ctx, http.MethodPatch, reqURL, map[string]any{"parameters": params})
+
+	request, err := c.newJSONRequest(ctx, http.MethodPost, controlplane.API{BaseURL: c.baseURL}.ConfigResolveURL(), req)
 	if err != nil {
-		return err
+		return NamespaceResolveResponse{}, err
 	}
-	if err := c.doJSON(req, nil, http.StatusOK); err != nil {
-		return fmt.Errorf("set parameters for %s: %w", serviceID, err)
-	}
-	return nil
-}
-
-// GetParameters returns parameter name->value for a service. Names optional (empty = all).
-func (c *Client) GetParameters(ctx context.Context, serviceID string, names []string) (map[string]string, error) {
-	if err := validateServiceID(serviceID); err != nil {
-		return nil, err
-	}
-	reqURL := c.serviceURL(serviceID, "/parameters")
-	if len(names) > 0 {
-		cleanNames := make([]string, 0, len(names))
-		for _, name := range names {
-			name = strings.TrimSpace(name)
-			if name != "" {
-				cleanNames = append(cleanNames, name)
-			}
-		}
-		if len(cleanNames) > 0 {
-			q := url.Values{}
-			q.Set("names", strings.Join(cleanNames, ","))
-			reqURL += "?" + q.Encode()
-		}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-Internal-Key", c.internalKey)
-	var out struct {
-		Parameters map[string]string `json:"parameters"`
-	}
-	if err := c.doJSON(req, &out, http.StatusOK); err != nil {
-		return nil, fmt.Errorf("get parameters for %s: %w", serviceID, err)
-	}
-	if out.Parameters == nil {
-		out.Parameters = make(map[string]string)
-	}
-	return out.Parameters, nil
-}
-
-// ResolvedConfig is key->value after resolving config (key->param name) with parameters (param name->value). Version is semver (0.0.0).
-type ResolvedConfig struct {
-	ServiceID string            `json:"service_id"`
-	Version   string            `json:"version"`
-	Config    map[string]string `json:"config"`
-}
-
-// GetResolvedConfig returns config key->value at the exact version (e.g. 1.0.0). Version is required; all parts matter.
-func (c *Client) GetResolvedConfig(ctx context.Context, serviceID string, version string) (ResolvedConfig, error) {
-	if err := validateServiceID(serviceID); err != nil {
-		return ResolvedConfig{}, err
-	}
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return ResolvedConfig{}, fmt.Errorf("version is required (e.g. 1.0.0)")
-	}
-	q := url.Values{}
-	q.Set("version", version)
-	reqURL := c.serviceURL(serviceID, "/config/resolved") + "?" + q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return ResolvedConfig{}, err
-	}
-	req.Header.Set("X-Internal-Key", c.internalKey)
-	var out ResolvedConfig
-	if err := c.doJSON(req, &out, http.StatusOK); err != nil {
-		return ResolvedConfig{}, fmt.Errorf("get resolved config for %s@%s: %w", serviceID, version, err)
+	var out NamespaceResolveResponse
+	if err := c.doJSON(request, &out, http.StatusOK); err != nil {
+		return NamespaceResolveResponse{}, fmt.Errorf("resolve namespace config: %w", err)
 	}
 	if out.Config == nil {
-		out.Config = make(map[string]string)
+		out.Config = make(map[string]any)
 	}
 	return out, nil
 }
 
-// GetResolvedWithRetry fetches resolved config with retry until config is non-empty or max attempts reached.
-func (c *Client) GetResolvedWithRetry(ctx context.Context, serviceID string, version string, maxAttempts int, initialBackoff time.Duration) (ResolvedConfig, error) {
-	var lastErr error
-	maxAttempts, backoff := normalizeRetry(maxAttempts, initialBackoff)
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		res, err := c.GetResolvedConfig(ctx, serviceID, version)
-		if err != nil {
-			lastErr = err
-			if c.log != nil {
-				c.log.WarnFCtx(ctx, "resolved config get %s attempt %d: %v", serviceID, attempt+1, err)
-			}
-			if attempt < maxAttempts-1 {
-				select {
-				case <-ctx.Done():
-					return ResolvedConfig{}, ctx.Err()
-				case <-time.After(backoff):
-					backoff *= 2
-				}
-			}
-			continue
-		}
-		if len(res.Config) > 0 {
-			return res, nil
-		}
-		lastErr = fmt.Errorf("resolved config empty")
-		if attempt < maxAttempts-1 {
-			select {
-			case <-ctx.Done():
-				return ResolvedConfig{}, ctx.Err()
-			case <-time.After(backoff):
-				backoff *= 2
-			}
-		}
-	}
-	return ResolvedConfig{}, lastErr
-}
+func (c *Client) GetNamespaceWatch(ctx context.Context, req NamespaceWatchRequest) (NamespaceWatchResponse, error) {
+	req.NamespaceID = strings.TrimSpace(req.NamespaceID)
+	req.ServiceID = strings.TrimSpace(req.ServiceID)
+	req.NamespaceKey = strings.TrimSpace(req.NamespaceKey)
 
-func (c *Client) serviceURL(serviceID, suffix string) string {
-	return c.baseURL + "/internal/api/v1/services/" + url.PathEscape(strings.TrimSpace(serviceID)) + suffix
+	if req.NamespaceID == "" && (req.ServiceID == "" || req.NamespaceKey == "") {
+		return NamespaceWatchResponse{}, fmt.Errorf("namespace_id or service_id + namespace_key is required")
+	}
+
+	query := url.Values{}
+	if req.NamespaceID != "" {
+		query.Set("namespace_id", req.NamespaceID)
+	}
+	if req.ServiceID != "" {
+		query.Set("service_id", req.ServiceID)
+	}
+	if req.NamespaceKey != "" {
+		query.Set("namespace_key", req.NamespaceKey)
+	}
+
+	requestURL := controlplane.API{BaseURL: c.baseURL}.ConfigWatchURL()
+	if encoded := query.Encode(); encoded != "" {
+		requestURL += "?" + encoded
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return NamespaceWatchResponse{}, err
+	}
+	var out NamespaceWatchResponse
+	if err := c.doJSON(request, &out, http.StatusOK); err != nil {
+		return NamespaceWatchResponse{}, fmt.Errorf("get namespace watch metadata: %w", err)
+	}
+	return out, nil
 }
 
 func (c *Client) newJSONRequest(ctx context.Context, method, reqURL string, body any) (*http.Request, error) {
@@ -297,7 +275,6 @@ func (c *Client) newJSONRequest(ctx context.Context, method, reqURL string, body
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-Internal-Key", c.internalKey)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -305,7 +282,7 @@ func (c *Client) newJSONRequest(ctx context.Context, method, reqURL string, body
 }
 
 func (c *Client) doJSON(req *http.Request, out any, allowedStatus ...int) error {
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req.Context(), req)
 	if err != nil {
 		return err
 	}
@@ -314,7 +291,6 @@ func (c *Client) doJSON(req *http.Request, out any, allowedStatus ...int) error 
 	if !statusAllowed(resp.StatusCode, allowedStatus) {
 		return readStatusError(resp)
 	}
-
 	if out == nil {
 		return nil
 	}
@@ -340,21 +316,4 @@ func readStatusError(resp *http.Response) error {
 		return fmt.Errorf("request failed with status %d", resp.StatusCode)
 	}
 	return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, body)
-}
-
-func validateServiceID(serviceID string) error {
-	if strings.TrimSpace(serviceID) == "" {
-		return fmt.Errorf("serviceID is required")
-	}
-	return nil
-}
-
-func normalizeRetry(maxAttempts int, initialBackoff time.Duration) (int, time.Duration) {
-	if maxAttempts <= 0 {
-		maxAttempts = 1
-	}
-	if initialBackoff <= 0 {
-		initialBackoff = 200 * time.Millisecond
-	}
-	return maxAttempts, initialBackoff
 }

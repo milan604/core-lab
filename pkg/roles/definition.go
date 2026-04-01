@@ -15,6 +15,12 @@ type Definition struct {
 
 	// Permissions is the list of permission references assigned to this role
 	Permissions []permissions.Reference
+
+	// ManagedServices identifies the permission-service scopes this definition owns.
+	// When empty, the scopes are inferred from Permissions. This is useful when a
+	// role intentionally has an empty permission set for a service but still needs
+	// stale grants for that service removed from Sentinel.
+	ManagedServices []string
 }
 
 // PermissionCount returns the number of permissions assigned to this role

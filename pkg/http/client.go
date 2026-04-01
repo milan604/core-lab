@@ -468,3 +468,22 @@ func (c *Client) PostJSON(ctx context.Context, url string, body interface{}, v i
 
 	return c.DoJSON(ctx, req, v)
 }
+
+// PutJSON performs a PUT request with a JSON body and unmarshals the JSON response.
+func (c *Client) PutJSON(ctx context.Context, url string, body interface{}, v interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, nil)
+	if err != nil {
+		return err
+	}
+
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	return c.DoJSON(ctx, req, v)
+}

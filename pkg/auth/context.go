@@ -48,6 +48,18 @@ func ContextWithTenantID(ctx context.Context, tenantID string) context.Context {
 	return context.WithValue(ctx, tenantIDContextKey, scopedTenantID)
 }
 
+// ContextWithUserID stores the resolved user ID in a standard context.Context.
+func ContextWithUserID(ctx context.Context, userID string) context.Context {
+	scopedUserID := strings.TrimSpace(userID)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if scopedUserID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxUserIDKey, scopedUserID)
+}
+
 // TenantIDFromContext retrieves the resolved tenant ID from a standard context.Context.
 func TenantIDFromContext(ctx context.Context) (string, bool) {
 	if ctx == nil {
@@ -58,6 +70,19 @@ func TenantIDFromContext(ctx context.Context) (string, bool) {
 			if tenantID := strings.TrimSpace(value); tenantID != "" {
 				return tenantID, true
 			}
+		}
+	}
+	return "", false
+}
+
+// UserIDFromContext retrieves the resolved user ID from a standard context.Context.
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	if value, ok := ctx.Value(ctxUserIDKey).(string); ok {
+		if userID := strings.TrimSpace(value); userID != "" {
+			return userID, true
 		}
 	}
 	return "", false

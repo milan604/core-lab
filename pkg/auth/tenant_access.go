@@ -178,7 +178,7 @@ func ResolveTenantUserScope(c *gin.Context, tenantID *string, userID *string, cf
 		SetTenantID(c, requestedTenantID)
 	}
 	if requestedUserID != "" {
-		c.Set(ctxUserIDKey, requestedUserID)
+		SetUserID(c, requestedUserID)
 	}
 
 	return strPtr(requestedTenantID), strPtr(requestedUserID), true

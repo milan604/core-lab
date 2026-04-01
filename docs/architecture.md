@@ -8,12 +8,12 @@ This repository provides a modular toolkit for building Go backend services with
 	- `server/` — Gin-based HTTP server setup with middleware (request ID, logging, CORS, rate limit, Prometheus, error handling, recovery) and functional options.
 	- `logger/` — Zap-based structured logging with context helpers.
 	- `config/` — Configuration loader (Viper) with sane defaults and environment overrides.
-	- `db/` — Database clients (Postgres, Mongo, Redis) with connection helpers.
-	- `auth/` — Auth integrations (Keycloak, OpenFGA) and middleware hooks.
-	- `events/` — Messaging integrations (Kafka, NATS, SQS).
+	- `controlplane/` — Shared endpoint, identity, and bootstrap contracts for external authz/config control planes, with Sentinel compatibility built in.
+	- `auth/` — JWT/JWKS verification, claims helpers, and authorization middleware for Gin services.
 	- `errors/` — Canonical application error model and helpers.
 	- `response/` — Consistent JSON response envelope.
 	- `validator/` — Binding + validation helpers on top of gin/validator.
+	- `permissions/`, `roles/`, `quota/`, `configmanager/` — Shared clients and bootstrapping helpers for policy, entitlement, and configuration integration.
 	- `i18n/` — Lightweight translation with interpolation, pluralization, fallbacks, and Gin middleware.
 	- `utils/` — Practical generics and helpers (strings, time, validation).
 	- `version/` — Build-time injected version metadata.
@@ -61,3 +61,5 @@ Logging is structured via Zap. Metrics are exposed with Prometheus when enabled.
 ## Extensibility
 
 All components are pluggable and follow small, focused interfaces. Packages are decoupled so you can replace parts (e.g., swap auth provider or event bus) without impacting the rest.
+
+For platform-level concerns, `core-lab` should own reusable runtime contracts and clients, while product-specific control-plane behavior stays in the product repo that implements those contracts.

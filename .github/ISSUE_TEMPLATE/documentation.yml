@@ -1,0 +1,24 @@
+name: Documentation improvement
+description: Suggest README, package docs, or example improvements.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: gap
+    attributes:
+      label: Documentation gap
+      description: What is unclear, missing, outdated, or hard to discover?
+      placeholder: Describe the missing or confusing documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested improvement
+      description: What should be added or clarified?
+  - type: textarea
+    id: references
+    attributes:
+      label: Related files or packages
+      description: Link the relevant package docs, files, or examples if known.

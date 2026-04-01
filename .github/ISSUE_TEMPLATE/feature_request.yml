@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a new package capability, shared pattern, or developer workflow improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Describe the repeated pain point or missing platform capability.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should core-lab provide?
+      placeholder: Describe the desired API, package, behavior, or workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What are the current workarounds or competing designs?
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility considerations
+      description: Note any migration, versioning, or backwards-compatibility concerns.

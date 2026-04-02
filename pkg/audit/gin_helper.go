@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/milan604/core-lab/pkg/auth"
 	"github.com/milan604/core-lab/pkg/logger"
+	coretenant "github.com/milan604/core-lab/pkg/tenant"
 )
 
 // NewEvent creates an Event pre-populated from the Gin context.
@@ -23,6 +24,13 @@ func NewEvent(c *gin.Context, service, action, resource, resourceID, status stri
 		IPAddress:  c.ClientIP(),
 	}
 
+	if requestContext, ok := coretenant.RequestContextFromContext(c.Request.Context()); ok {
+		ev.TenantID = requestContext.TenantID
+		ev.UserID = requestContext.ActorUserID
+		if ev.RequestID == "" {
+			ev.RequestID = requestContext.CorrelationID
+		}
+	}
 	if tid, ok := c.Get("tenant_id"); ok {
 		ev.TenantID, _ = tid.(string)
 	}

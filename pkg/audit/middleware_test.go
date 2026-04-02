@@ -7,10 +7,63 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/milan604/core-lab/pkg/auth"
 )
 
 type capturePublisher struct {
 	events []Event
+}
+
+func TestMiddlewareIncludesCanonicalTenantContextMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	publisher := &capturePublisher{}
+	engine := gin.New()
+	engine.Use(Middleware(MiddlewareConfig{
+		Enabled:   true,
+		Service:   "subscription-service",
+		Publisher: publisher,
+		Methods:   defaultAuditedMethods,
+	}))
+	engine.POST("/subscriptions/:subscription_id/reactivate", func(c *gin.Context) {
+		c.Request = c.Request.WithContext(auth.ContextWithCorrelationID(
+			auth.ContextWithServiceID(
+				auth.ContextWithUserID(
+					auth.ContextWithTenantID(c.Request.Context(), "tenant-1"),
+					"user-1",
+				),
+				"subscription-service",
+			),
+			"req-42",
+		))
+		c.Request = c.Request.WithContext(auth.ContextWithSuperAdmin(c.Request.Context(), true))
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/subscriptions/sub-1/reactivate", nil)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, req)
+
+	if len(publisher.events) != 1 {
+		t.Fatalf("expected 1 audit event, got %d", len(publisher.events))
+	}
+
+	event := publisher.events[0]
+	if got := event.Metadata["tenant_id"]; got != "tenant-1" {
+		t.Fatalf("tenant_id metadata = %#v, want tenant-1", got)
+	}
+	if got := event.Metadata["actor_user_id"]; got != "user-1" {
+		t.Fatalf("actor_user_id metadata = %#v, want user-1", got)
+	}
+	if got := event.Metadata["service_id"]; got != "subscription-service" {
+		t.Fatalf("service_id metadata = %#v, want subscription-service", got)
+	}
+	if got := event.Metadata["correlation_id"]; got != "req-42" {
+		t.Fatalf("correlation_id metadata = %#v, want req-42", got)
+	}
+	if got := event.Metadata["is_super_admin"]; got != true {
+		t.Fatalf("is_super_admin metadata = %#v, want true", got)
+	}
 }
 
 func (p *capturePublisher) Publish(_ context.Context, event Event) error {

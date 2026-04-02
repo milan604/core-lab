@@ -188,6 +188,36 @@ func (a *Authorizer) RequireAuthenticated() gin.HandlerFunc {
 	}
 }
 
+// RequireServiceToken ensures the authenticated caller is using a service token.
+func (a *Authorizer) RequireServiceToken() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := GetClaims(c)
+		if !ok {
+			var err error
+			claims, err = a.authenticate(c)
+			if err != nil {
+				log := logger.GetLogger(c)
+				if log == nil {
+					log = a.log
+				}
+				a.abortAuthError(c, err, log)
+				return
+			}
+		}
+
+		if !claims.IsServiceToken() {
+			log := logger.GetLogger(c)
+			if log == nil {
+				log = a.log
+			}
+			a.abortWithJSON(c, http.StatusForbidden, "service_token_required", "service token required", log)
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // authenticate extracts and verifies the JWT token from the request.
 func (a *Authorizer) authenticate(c *gin.Context) (Claims, error) {
 	// Get logger from context if available, otherwise use stored logger

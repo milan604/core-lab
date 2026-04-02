@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/milan604/core-lab/pkg/auth"
+	"github.com/milan604/core-lab/pkg/logger"
 )
 
 func TestManagerProcessesJobAndStats(t *testing.T) {
@@ -125,6 +128,59 @@ func TestManagerDelayedJob(t *testing.T) {
 	}
 
 	waitForStatus(t, manager, job.ID, StatusSucceeded)
+}
+
+func TestManagerEnqueueAddsCanonicalRequestMetadata(t *testing.T) {
+	manager := newTestManager(t)
+	ctx := auth.ContextWithCorrelationID(
+		auth.ContextWithServiceID(
+			auth.ContextWithUserID(
+				auth.ContextWithTenantID(context.Background(), "tenant-1"),
+				"user-1",
+			),
+			"sites-service",
+		),
+		"req-1",
+	)
+	ctx = auth.ContextWithSuperAdmin(ctx, true)
+	ctx = context.WithValue(ctx, logger.RequestIDKey, "req-1")
+
+	job, err := manager.Enqueue(ctx, EnqueueRequest{
+		Type: "demo.job",
+	})
+	if err == nil {
+		t.Fatalf("expected unregistered job type error, got nil")
+	}
+
+	manager.cfg.AllowEnqueueWithoutHandler = true
+	job, err = manager.Enqueue(ctx, EnqueueRequest{
+		Type: "demo.job",
+	})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if got := job.Metadata["tenant_id"]; got != "tenant-1" {
+		t.Fatalf("tenant_id metadata = %q, want tenant-1", got)
+	}
+	if got := job.Metadata["actor_user_id"]; got != "user-1" {
+		t.Fatalf("actor_user_id metadata = %q, want user-1", got)
+	}
+	if got := job.Metadata["service_id"]; got != "sites-service" {
+		t.Fatalf("service_id metadata = %q, want sites-service", got)
+	}
+	if got := job.Metadata["source"]; got != "sites-service" {
+		t.Fatalf("source metadata = %q, want sites-service", got)
+	}
+	if got := job.Metadata["correlation_id"]; got != "req-1" {
+		t.Fatalf("correlation_id metadata = %q, want req-1", got)
+	}
+	if got := job.Metadata["is_super_admin"]; got != "true" {
+		t.Fatalf("is_super_admin metadata = %q, want true", got)
+	}
+	if got := job.Metadata["initiator"]; got != "user:user-1" {
+		t.Fatalf("initiator metadata = %q, want user:user-1", got)
+	}
 }
 
 func newTestManager(t *testing.T) *Manager {

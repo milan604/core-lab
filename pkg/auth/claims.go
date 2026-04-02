@@ -1,6 +1,9 @@
 package auth
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Claims captures the verified JWT context extracted from incoming requests.
 type Claims struct {
@@ -31,6 +34,32 @@ func (c Claims) TenantStatus() string {
 // TenantMembershipStatus returns the tenant_membership_status from the token claims, if present.
 func (c Claims) TenantMembershipStatus() string {
 	return c.ClaimString("tenant_membership_status")
+}
+
+// ServiceID returns the calling service identifier for service tokens, if present.
+func (c Claims) ServiceID() string {
+	return c.ClaimString("service_id")
+}
+
+// IsSuperAdmin reports whether the verified caller is marked as a global super admin.
+func (c Claims) IsSuperAdmin() bool {
+	if c.Raw == nil {
+		return false
+	}
+	rawValue, ok := c.Raw["is_super_admin"]
+	if !ok || rawValue == nil {
+		return false
+	}
+
+	switch value := rawValue.(type) {
+	case bool:
+		return value
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		return err == nil && parsed
+	default:
+		return false
+	}
 }
 
 // UserID returns the authenticated user identifier, preferring identity_id over sub.

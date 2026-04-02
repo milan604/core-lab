@@ -62,13 +62,19 @@ The full package index lives in [docs/package-catalog.md](./docs/package-catalog
 | Platform integration | [`pkg/controlplane`](./pkg/controlplane/README.md), [`pkg/configmanager`](./pkg/configmanager/client.go), [`pkg/runtimeconfig`](./pkg/runtimeconfig/README.md), [`pkg/http`](./pkg/http/README.md) |
 | API ergonomics | [`pkg/errors`](./pkg/errors/README.md), [`pkg/apperr`](./pkg/apperr/README.md), [`pkg/response`](./pkg/response/README.md), [`pkg/validator`](./pkg/validator/README.md) |
 | Infra and data | [`pkg/config`](./pkg/config/README.md), [`pkg/postgres`](./pkg/postgres/README.md), [`pkg/tenant`](./pkg/tenant/lifecycle.go) |
-| Runtime services | [`pkg/jobs`](./pkg/jobs/README.md), [`pkg/audit`](./pkg/audit/audit.go), [`pkg/logger`](./pkg/logger/README.md), [`pkg/observability`](./pkg/observability/README.md) |
+| Runtime services | [`pkg/jobs`](./pkg/jobs/README.md), [`pkg/events`](./pkg/events/README.md), [`pkg/events/outbox`](./pkg/events/outbox/README.md), [`pkg/audit`](./pkg/audit/audit.go), [`pkg/logger`](./pkg/logger/README.md), [`pkg/observability`](./pkg/observability/README.md) |
 | Utilities | [`pkg/i18n`](./pkg/i18n/README.md), [`pkg/utils`](./pkg/utils/README.md), [`pkg/featureflags`](./pkg/featureflags/featureflags.go) |
 
 ## Documentation
 
 - [Architecture](./docs/architecture.md)
 - [Platform Foundation Architecture](./docs/platform-foundation-architecture.md)
+- [Platform Service Standards](./docs/platform-service-standards.md)
+- [Platform Events](./docs/platform-events.md)
+- [Outbox Pattern](./docs/outbox-pattern.md)
+- [Config Namespace Layering](./docs/config-namespace-layering.md)
+- [Hybrid Local Runbook](./docs/hybrid-local-runbook.md)
+- [Tenant Request Context](./docs/tenant-request-context.md)
 - [Package Catalog](./docs/package-catalog.md)
 - [Examples](./examples/README.md)
 - [Changelog](./docs/changelog.md)

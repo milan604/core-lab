@@ -10,10 +10,14 @@ All notable changes to this project are documented here, following the Keep a Ch
 - Validator helpers for JSON/Query/URI/Header and combined binders.
 - Utility packages (stringutil, timeutil, validation) with generics.
 - `pkg/jobs` for background job processing with worker pools, delayed execution, retries, stats, and admin APIs.
+- `pkg/events` for canonical tenant-aware business event envelopes and cross-service publication contracts.
+- `pkg/events/outbox` for durable business-event delivery with claiming, leasing, retries, and replay-safe processing.
 
 ### Changed
 - Refactored server options and middleware ordering for clarity and maintainability.
 - Expanded repository tooling and examples to cover background job runtimes and standalone worker services.
+- Documented the jobs-vs-events split so authoritative services can publish stable domain facts without overloading background jobs.
+- Documented durable outbox delivery, config namespace layering, and the dedicated-tenant deployment blueprint.
 
 ### Fixed
 - Import path alignment to module `corelab`.

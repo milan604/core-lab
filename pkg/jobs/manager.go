@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/milan604/core-lab/pkg/apperr"
+	"github.com/milan604/core-lab/pkg/auth"
 	"github.com/milan604/core-lab/pkg/logger"
+	coretenant "github.com/milan604/core-lab/pkg/tenant"
 )
 
 // Manager runs the background worker pool and coordinates job execution.
@@ -231,6 +234,15 @@ func (m *Manager) Enqueue(ctx context.Context, req EnqueueRequest) (Job, error) 
 	}
 	if job.Metadata == nil {
 		job.Metadata = make(map[string]string)
+	}
+	if claims, ok := auth.ClaimsFromContext(ctx); ok {
+		ctx = auth.ContextWithClaims(ctx, claims)
+	}
+	if requestID, ok := ctx.Value(logger.RequestIDKey).(string); ok && strings.TrimSpace(requestID) != "" {
+		ctx = auth.ContextWithCorrelationID(ctx, requestID)
+	}
+	if requestContext, ok := coretenant.RequestContextFromContext(ctx); ok {
+		job.Metadata = coretenant.MergeMetadata(job.Metadata, requestContext)
 	}
 	if _, exists := job.Metadata["job_manager"]; !exists && m.cfg.Name != "" {
 		job.Metadata["job_manager"] = m.cfg.Name

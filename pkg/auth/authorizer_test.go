@@ -84,6 +84,39 @@ func TestRequirePermissionCanDisableServiceTokenBypass(t *testing.T) {
 	}
 }
 
+func TestRequireServiceTokenRejectsUserAccessToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	privateKey, publicKeyPEM := testKeyPair(t)
+	authorizer := testAuthorizer(t, stubConfig{
+		"RSAPublicKey": publicKeyPEM,
+	})
+
+	token := signTestToken(t, privateKey, jwt.MapClaims{
+		"sub":         "user-1",
+		"identity_id": "user-1",
+		"token_use":   "access",
+	})
+
+	router := gin.New()
+	router.GET("/internal", authorizer.RequireServiceToken(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/internal", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusForbidden, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "service_token_required") {
+		t.Fatalf("body = %q, want service_token_required error", recorder.Body.String())
+	}
+}
+
 func TestRequirePermissionUsesDecisionClientWhenConfigured(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

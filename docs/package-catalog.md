@@ -44,7 +44,7 @@ This document is the top-level package index for `core-lab`. It helps contributo
 | --- | --- |
 | [`pkg/config`](../pkg/config/README.md) | Shared config loading and defaults |
 | [`pkg/postgres`](../pkg/postgres/README.md) | Postgres helpers, migrations, tenant context helpers |
-| `pkg/tenant` | Shared tenant lifecycle helpers |
+| `pkg/tenant` | Shared tenant lifecycle helpers and canonical tenant request context |
 
 ## Observability and Operations
 
@@ -53,6 +53,8 @@ This document is the top-level package index for `core-lab`. It helps contributo
 | [`pkg/logger`](../pkg/logger/README.md) | Structured logging and context-aware logging helpers |
 | [`pkg/observability`](../pkg/observability/README.md) | Metrics, tracing, endpoint instrumentation, observability wiring |
 | [`pkg/jobs`](../pkg/jobs/README.md) | Background job manager, worker pool, retries, stats, and admin APIs |
+| [`pkg/events`](../pkg/events/README.md) | Canonical cross-service business event envelope and publication helpers |
+| [`pkg/events/outbox`](../pkg/events/outbox/README.md) | Durable outbox processor for authoritative business-event delivery |
 | `pkg/audit` | Audit event middleware, helpers, and Kafka integration |
 
 ## Localization and Utilities

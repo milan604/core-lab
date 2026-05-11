@@ -9,6 +9,7 @@ import (
 	"github.com/milan604/core-lab/pkg/auth"
 	"github.com/milan604/core-lab/pkg/config"
 	"github.com/milan604/core-lab/pkg/logger"
+	coretenant "github.com/milan604/core-lab/pkg/tenant"
 )
 
 var defaultAuditedMethods = []string{
@@ -212,6 +213,23 @@ func buildMetadata(c *gin.Context, started time.Time) map[string]any {
 		}
 		if membershipStatus := rawClaimString(claims.Raw, "tenant_membership_status"); membershipStatus != "" {
 			metadata["tenant_membership_status"] = membershipStatus
+		}
+	}
+	if requestContext, ok := coretenant.RequestContextFromContext(c.Request.Context()); ok {
+		if requestContext.TenantID != "" {
+			metadata[coretenant.MetadataTenantID] = requestContext.TenantID
+		}
+		if requestContext.ActorUserID != "" {
+			metadata[coretenant.MetadataActorUserID] = requestContext.ActorUserID
+		}
+		if requestContext.ServiceID != "" {
+			metadata[coretenant.MetadataServiceID] = requestContext.ServiceID
+		}
+		if requestContext.CorrelationID != "" {
+			metadata[coretenant.MetadataCorrelationID] = requestContext.CorrelationID
+		}
+		if requestContext.IsSuperAdmin {
+			metadata[coretenant.MetadataIsSuperAdmin] = true
 		}
 	}
 

@@ -155,3 +155,31 @@ func TestResolveIntoWithResolverReturnsBootstrapWhenOptional(t *testing.T) {
 		t.Fatalf("expected bootstrap config to remain, got %q", got)
 	}
 }
+
+func TestResolveRequestedVersionUsesAutoInDevelopment(t *testing.T) {
+	tempDir := t.TempDir()
+	versionFile := filepath.Join(tempDir, ".config-version.json")
+	if err := os.WriteFile(versionFile, []byte(`{"version":"1.0.0"}`), 0o600); err != nil {
+		t.Fatalf("failed to write version file: %v", err)
+	}
+
+	if got := resolveRequestedVersion([]string{versionFile}, "development"); got != "" {
+		t.Fatalf("expected empty version for development, got %q", got)
+	}
+}
+
+func TestResolveRequestedVersionHonorsEnvOverride(t *testing.T) {
+	t.Setenv("CONFIG_RELEASE_VERSION", "9.9.9")
+
+	if got := resolveRequestedVersion(nil, "staging"); got != "9.9.9" {
+		t.Fatalf("expected env override version, got %q", got)
+	}
+}
+
+func TestResolveRequestedVersionHonorsAutoOverride(t *testing.T) {
+	t.Setenv("CONFIG_RELEASE_VERSION", "auto")
+
+	if got := resolveRequestedVersion(nil, "staging"); got != "" {
+		t.Fatalf("expected auto override to return empty version, got %q", got)
+	}
+}

@@ -103,6 +103,7 @@ make build
 
 Release notes and changelog process:
 - update [docs/changelog.md](./docs/changelog.md)
+- prepare a versioned release note such as [docs/release-v0.3.0.md](./docs/release-v0.3.0.md)
 - follow [CONTRIBUTING.md](./CONTRIBUTING.md)
 - tag using semantic versioning
 

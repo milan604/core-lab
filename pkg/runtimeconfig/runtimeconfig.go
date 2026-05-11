@@ -276,9 +276,33 @@ func normalizeOptions(cfg *config.Config, opts ResolveOptions) ResolveOptions {
 		opts.VersionFiles = DefaultVersionFiles(opts.BootstrapPath)
 	}
 	if opts.Version == "" {
-		opts.Version = readRequestedVersion(opts.VersionFiles)
+		opts.Version = resolveRequestedVersion(opts.VersionFiles, opts.Environment)
 	}
 	return opts
+}
+
+func resolveRequestedVersion(paths []string, environment string) string {
+	if override := strings.TrimSpace(os.Getenv("CONFIG_RELEASE_VERSION")); override != "" {
+		if strings.EqualFold(override, "auto") {
+			return ""
+		}
+		return override
+	}
+
+	if isDevelopmentEnvironment(environment) {
+		return ""
+	}
+
+	return readRequestedVersion(paths)
+}
+
+func isDevelopmentEnvironment(environment string) bool {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "dev", "development":
+		return true
+	default:
+		return false
+	}
 }
 
 func mergeConfig(cfg *config.Config, values map[string]any) error {
